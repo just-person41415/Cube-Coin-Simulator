@@ -1,14 +1,13 @@
+
 // FIX: Add declarations for global variables and extend Window interface to avoid TypeScript errors.
 declare var THREE: any;
 declare var firebase: any;
 
-declare global {
-    interface Window {
-        // FIX: Changed timer handle type to 'any' to support both browser (number) and Node.js (Timeout) return types from setInterval.
-        autosaveInterval?: any;
-        handleTrade?: (type: 'buy' | 'sell', coinId: string) => void;
-        handleMaxAmount?: (type: 'buy' | 'sell', coinId: string) => void;
-    }
+interface Window {
+    // FIX: Changed timer handle type to 'any' to support both browser (number) and Node.js (Timeout) return types from setInterval.
+    autosaveInterval?: any;
+    handleTrade?: (type: 'buy' | 'sell', coinId: string) => void;
+    handleMaxAmount?: (type: 'buy' | 'sell', coinId: string) => void;
 }
 
 // --- Firebase 설정 ---
@@ -28,6 +27,7 @@ const db = firebase.database();
 
 
 // --- 전역 설정 ---
+const DATA_VERSION = 4; // Data version for migration/reset
 const V2_UPDATE_TIMESTAMP = new Date('2024-09-01T09:00:00Z').getTime(); // v2 업데이트 예시 시간 (UTC)
 const WEATHER_DATA: {[key: string]: { icon: string, short_desc: string, long_desc: string, isBad?: boolean, isGood?: boolean }} = {
     '맑음': { icon: '☀️', short_desc: '상승 확률 소폭 증가', long_desc: '코인 증가 확률 +0.5%, 감소 확률 -0.5%', isGood: true },
@@ -62,7 +62,6 @@ const RESOURCE_NAME_MAP: { [key: string]: string } = {
 };
 
 let gameLoopInterval: any = null;
-let weatherInterval: any = null;
 let priceUpdateIntervals: any = {};
 let gameTime: Date;
 let dom: any = {};
@@ -75,6 +74,7 @@ let globalWeatherOverride: string | null = null;
 let globalPriceOverrides: any = null;
 let currentGameSpeed = 1;
 let gameState: any;
+let nextWeatherTime = 0; // Used for display calculation
 
 const COIN_DATA: {[key: string]: any} = {
     Cube: {
@@ -83,7 +83,7 @@ const COIN_DATA: {[key: string]: any} = {
         minPrice: 5000,
         maxPrice: 25000,
         interval: 2000,
-        upChance: 0.55,
+        upChance: 0.53, // -2%
         fluctuation: {
             day: { small: 0.6, medium: 0.35, large: 0.05 },
             night: { small: 0.6, medium: 0.35, large: 0.05 }
@@ -119,7 +119,7 @@ const COIN_DATA: {[key: string]: any} = {
         minPrice: 40000,
         maxPrice: 200000,
         interval: 3000,
-        upChance: 0.51,
+        upChance: 0.49, // -2%
         fluctuation: {
             day: { small: 0.6, medium: 0.38, large: 0.02 },
             night: { small: 0.6, medium: 0.38, large: 0.02 }
@@ -131,7 +131,7 @@ const COIN_DATA: {[key: string]: any} = {
         minPrice: 80000,
         maxPrice: 500000,
         interval: 3000,
-        upChance: 0.54,
+        upChance: 0.52, // -2%
         fluctuation: {
             day: { small: 0.98, medium: 0, large: 0.02 },
             night: { small: 0.98, medium: 0, large: 0.02 }
@@ -152,28 +152,33 @@ const COIN_DATA: {[key: string]: any} = {
 };
 
 // --- 게임 데이터 정의 ---
+// Computer effects are now probabilities per minute (0.025 = 2.5%)
 const COMPUTER_DATA = [
-    { name: '컴퓨터 없음', cost: {}, effect: 0 },
-    { name: 'Tier 1 컴퓨터 (수익 +10%)', cost: { userCash: 100000 }, effect: 0.1 },
-    { name: 'Tier 2 컴퓨터 (수익 +20%)', cost: { userCash: 500000 }, effect: 0.2 },
-    { name: 'Tier 3 컴퓨터 (수익 +30%)', cost: { userCubes: 20 }, effect: 0.3 },
-    { name: 'Tier 4 컴퓨터 (수익 +40%)', cost: { userCubes: 50, userLunar: 10 }, effect: 0.4 },
-    { name: 'Tier 5 컴퓨터 (수익 +50%)', cost: { userCubes: 100, userLunar: 30, userEnergy: 5 }, effect: 0.5 },
-    { name: 'Tier 6 컴퓨터 (수익 +60%)', cost: { userLunar: 100, userEnergy: 30, userPrisms: 10 }, effect: 0.6 },
-    { name: 'Tier 7 컴퓨터 (수익 +70%)', cost: { userEnergy: 100, userPrisms: 30, userDigital: 5 }, effect: 0.7 },
-    { name: 'Tier 8 컴퓨터 (수익 +80%)', cost: { userPrisms: 100, userDigital: 30 }, effect: 0.8 },
-    { name: 'Tier 9 컴퓨터 (수익 +90%)', cost: { userDigital: 100, userAurora: 1 }, effect: 0.9 },
-    { name: 'Tier 10 컴퓨터 (수익 +100%)', cost: { userDigital: 200, userAurora: 5 }, effect: 1.0 },
+    { name: '컴퓨터 없음', cost: {}, effect: {} },
+    { name: 'Tier 1 컴퓨터', cost: { userDataCrystal: 5 }, effect: { Cube: 0.025, Lunar: 0.02, Energy: 0.015, Prism: 0.01, Digital: 0.005 } },
+    { name: 'Tier 2 컴퓨터', cost: { userDataCrystal: 20 }, effect: { Cube: 0.05, Lunar: 0.04, Energy: 0.03, Prism: 0.02, Digital: 0.01 } },
+    { name: 'Tier 3 컴퓨터', cost: { userDataCrystal: 40 }, effect: { Cube: 0.075, Lunar: 0.06, Energy: 0.045, Prism: 0.03, Digital: 0.015 } },
+    { name: 'Tier 4 컴퓨터', cost: { userDataCrystal: 50 }, effect: { Cube: 0.10, Lunar: 0.08, Energy: 0.06, Prism: 0.04, Digital: 0.02 } },
+    { name: 'Tier 5 컴퓨터', cost: { userDataCrystal: 80 }, effect: { Cube: 0.125, Lunar: 0.10, Energy: 0.075, Prism: 0.05, Digital: 0.025 } },
+];
+
+// Enchantment Table Upgrade Data (Unlock/Upgrade costs)
+const TABLE_UPGRADE_COSTS = [
+    { cash: 50000, stones: 0 },   // Tier 0 -> 1
+    { cash: 100000, stones: 5 },  // Tier 1 -> 2
+    { cash: 200000, stones: 20 }, // Tier 2 -> 3
+    { cash: 500000, stones: 40 }, // Tier 3 -> 4
+    { cash: 1000000, stones: 100 } // Tier 4 -> 5
 ];
 
 // Enchantment Data
 const TABLE_DATA = [
     { tier: 0, name: '없음', cost: 0, stoneCost: 0, maxEnchants: 0 },
-    { tier: 1, name: '1티어 마법 부여대', cost: 50000, stoneCost: 1, maxEnchants: 2, maxLevel: 3 }, // Levels approx I-III
-    { tier: 2, name: '2티어 마법 부여대', cost: 100000, stoneCost: 3, maxEnchants: 3, maxLevel: 4 }, // Levels approx II-IV
-    { tier: 3, name: '3티어 마법 부여대', cost: 200000, stoneCost: 5, maxEnchants: 3, maxLevel: 5 }, // Levels approx III-V
-    { tier: 4, name: '4티어 마법 부여대', cost: 500000, stoneCost: 8, maxEnchants: 4, maxLevel: 6 }, // Levels approx IV-VI
-    { tier: 5, name: '5티어 마법 부여대', cost: 1000000, stoneCost: 10, maxEnchants: 5, maxLevel: 7 } // Levels approx IV-VII
+    { tier: 1, name: '1티어 마법 부여대', cost: 50000, stoneCost: 1, maxEnchants: 2, maxLevel: 3 }, 
+    { tier: 2, name: '2티어 마법 부여대', cost: 100000, stoneCost: 3, maxEnchants: 3, maxLevel: 4 }, 
+    { tier: 3, name: '3티어 마법 부여대', cost: 200000, stoneCost: 5, maxEnchants: 3, maxLevel: 5 }, 
+    { tier: 4, name: '4티어 마법 부여대', cost: 500000, stoneCost: 8, maxEnchants: 4, maxLevel: 6 }, 
+    { tier: 5, name: '5티어 마법 부여대', cost: 1000000, stoneCost: 10, maxEnchants: 5, maxLevel: 7 } 
 ];
 
 const TOTEM_DATA: {[key: string]: { name: string, desc: string, cost: number, tier: number, type: 'weather' | 'time', effect: any, conditions: { season?: string[], time?: 'day' | 'night' } }} = {
@@ -198,6 +203,7 @@ const TOTEM_DATA: {[key: string]: { name: string, desc: string, cost: number, ti
 const TOTEM_PURCHASE_LIMITS = { 1: 7, 2: 7, 3: 4, 4: 2, 5: 1 };
 
 const getInitialGameState = () => ({
+    version: DATA_VERSION,
     userCash: 100000, 
     userCubes: 0, userLunar: 0, userEnergy: 0, userPrisms: 0, 
     userDigital: 0, userAurora: 0, userMagicStone: 0, userDataCrystal: 0,
@@ -208,9 +214,10 @@ const getInitialGameState = () => ({
     currentDigitalPrice: 200000, lastDigitalPrice: 200000,
     currentAuroraPrice: 500000, lastAuroraPrice: 500000,
     computerTier: 0,
-    isCubePurchased: false, isLunarUpgraded: false, isEnergyUpgraded: false, isPrismUpgraded: false, isAuroraUpgraded: false,
+    isCubePurchased: false, isLunarUpgraded: false, isEnergyUpgraded: false, isPrismUpgraded: false, isDigitalUpgraded: false, isAuroraUpgraded: false,
+    lunarMiningLevel: 0, // 0: locked, 1: unlocked (base). No higher levels.
     weather: '맑음', experiencedWeathers: { '맑음': true },
-    shopItems: { digitalClock: false, weatherAlmanac: false, bed: false, enchantTable1: false, enchantTable2: false, enchantTable3: false, enchantTable4: false, enchantTable5: false },
+    shopItems: { digitalClock: false, weatherAlmanac: false, bed: false, magicBook: false }, 
     isInternetOutage: false, isInternetOutageCooldown: 0,
     gameTime: new Date(2025, 2, 21, 9, 0, 0).getTime(), // Start in Spring
     isSleeping: false, usedCodes: [], lastOnlineTimestamp: Date.now(),
@@ -223,6 +230,8 @@ const getInitialGameState = () => ({
     minedCoins: { CUBE: 0, LUNAR: 0, ENERGY: 0, PRISM: 0 }, sleepCount: 0,
     // Totems
     totemPurchaseCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    totemStock: {}, // { totemId: quantity }
+    lastTotemRefresh: 0,
     nextWeatherOverride: null,
     // Enchantment
     enchantTableTier: 0,
@@ -234,6 +243,8 @@ const getInitialGameState = () => ({
         showNotifications: true,
         notificationDuration: 3000, // in ms
     },
+    dataCrystalTick: 0, // helper for mining timing
+    lastMiningTimestamp: Date.now(), // For computer mining (1 min real time)
 });
 
 gameState = getInitialGameState();
@@ -263,6 +274,7 @@ function updateCubeAppearance() {
     let geometry; const materialProps: { [key: string]: any } = { metalness: 0.6, roughness: 0.4, emissive: 0x102040, };
     
     if (gameState.isAuroraUpgraded) { geometry = new THREE.IcosahedronGeometry(1.7, 1); materialProps.color = 0x10b981; materialProps.emissive = 0x059669; }
+    else if (gameState.isDigitalUpgraded) { geometry = new THREE.TorusKnotGeometry(1, 0.3, 100, 16); materialProps.color = 0x06b6d4; }
     else if (gameState.isPrismUpgraded) { geometry = new THREE.IcosahedronGeometry(1.5, 0); materialProps.color = 0xf472b6; } 
     else if (gameState.isEnergyUpgraded) { geometry = new THREE.BoxGeometry(2, 2, 2); materialProps.color = 0xfacc15; }
     else if (gameState.isLunarUpgraded) { geometry = new THREE.BoxGeometry(2, 2, 2); materialProps.color = 0xa855f7; }
@@ -299,6 +311,7 @@ function initGame() {
         currentPrismPrice: document.getElementById('current-prism-price'), prismPriceChange: document.getElementById('prism-price-change'),
         currentDigitalPrice: document.getElementById('current-digital-price'), digitalPriceChange: document.getElementById('digital-price-change'),
         currentAuroraPrice: document.getElementById('current-aurora-price'), auroraPriceChange: document.getElementById('aurora-price-change'),
+        tickerAurora: document.getElementById('ticker-aurora'),
 
         notification: document.getElementById('notification'), internetOutage: document.getElementById('internet-outage'),
         buyCubeButton: document.getElementById('buy-cube-button'), cubePurchaseOverlay: document.getElementById('cube-purchase-overlay'), passiveIncomeDisplay: document.getElementById('passive-income-display'), incomePerSecond: document.getElementById('income-per-second'),
@@ -308,17 +321,20 @@ function initGame() {
         timeContainer: document.getElementById('time-container'), gameTime: document.getElementById('game-time'), weatherContainer: document.getElementById('weather-container'), weatherDisplay: document.getElementById('weather-display'), seasonDisplay: document.getElementById('season-display'),
         shopSection: document.getElementById('shop-section'), shopItems: document.getElementById('shop-items'), codeSubmitButton: document.getElementById('code-submit-button'), codeInput: document.getElementById('code-input'),
         
-        upgradeLunarSection: document.getElementById('upgrade-lunar-section'), upgradeLunarButton: document.getElementById('upgrade-lunar-button'), 
+        upgradeLunarSection: document.getElementById('upgrade-lunar-section'), upgradeLunarButton: document.getElementById('upgrade-lunar-button'), lunarLevelText: document.getElementById('lunar-level-text'),
         upgradeEnergySection: document.getElementById('upgrade-energy-section'), upgradeEnergyButton: document.getElementById('upgrade-energy-button'), 
         upgradePrismSection: document.getElementById('upgrade-prism-section'), upgradePrismButton: document.getElementById('upgrade-prism-button'),
+        upgradeDigitalSection: document.getElementById('upgrade-digital-section'), upgradeDigitalButton: document.getElementById('upgrade-digital-button'),
         upgradeAuroraSection: document.getElementById('upgrade-aurora-section'), upgradeAuroraButton: document.getElementById('upgrade-aurora-button'),
 
         weatherAlmanacSection: document.getElementById('weather-almanac-section'), weatherAlmanacContent: document.getElementById('weather-almanac-content'), incomeSourceUpgrades: document.getElementById('income-source-upgrades'),
+        magicAlmanacSection: document.getElementById('magic-almanac-section'), magicAlmanacContent: document.getElementById('magic-almanac-content'),
+        
         trophyList: document.getElementById('trophy-list'), transactionHistoryList: document.getElementById('transaction-history-list'),
         chatMessages: document.getElementById('chat-messages'), chatInput: document.getElementById('chat-input'), chatSendButton: document.getElementById('chat-send-button'), logoutButton: document.getElementById('logout-button'),
         shopTabFunction: document.getElementById('shop-tab-function'), shopTabTotems: document.getElementById('shop-tab-totems'),
         shopContentFunction: document.getElementById('shop-content-function'), shopContentTotems: document.getElementById('shop-content-totems'),
-        totemItems: document.getElementById('totem-items'),
+        totemItems: document.getElementById('totem-items'), totemTimerDisplay: document.getElementById('totem-timer-display'),
         yellowDustOverlay: document.getElementById('yellow-dust-overlay'), heatWaveOverlay: document.getElementById('heat-wave-overlay'), snowOverlay: document.getElementById('snow-overlay'),
         updateBanner: document.getElementById('update-banner'), countdownTimer: document.getElementById('countdown-timer'),
         
@@ -327,10 +343,16 @@ function initGame() {
         enchantTableTierText: document.getElementById('enchant-table-tier-text'),
         enchantCostText: document.getElementById('enchant-cost-text'),
         doEnchantButton: document.getElementById('do-enchant-button'),
+        upgradeTableButton: document.getElementById('upgrade-table-button'),
+        enchantActionPanel: document.getElementById('enchant-action-panel'),
         activeEnchantsList: document.getElementById('active-enchants-list'),
         
         // Dev Panel
         devPanel: document.getElementById('dev-panel'), closeDevPanel: document.getElementById('close-dev-panel'), devWeatherSelect: document.getElementById('dev-weather-select'),
+        weatherTimer: document.getElementById('weather-timer'),
+        probMagicStone: document.getElementById('prob-magic-stone'),
+        probDataCrystal: document.getElementById('prob-data-crystal'),
+        // Removed openDevPanelBtn as button is removed from UI
     };
     
     if (dom.buyCubeButton) dom.buyCubeButton.addEventListener('click', handleBuy3DCube);
@@ -339,11 +361,14 @@ function initGame() {
     if (dom.upgradeLunarButton) dom.upgradeLunarButton.addEventListener('click', handleUpgradeLunar);
     if (dom.upgradeEnergyButton) dom.upgradeEnergyButton.addEventListener('click', handleUpgradeEnergy);
     if (dom.upgradePrismButton) dom.upgradePrismButton.addEventListener('click', handleUpgradePrism);
+    if (dom.upgradeDigitalButton) dom.upgradeDigitalButton.addEventListener('click', handleUpgradeDigital);
     if (dom.upgradeAuroraButton) dom.upgradeAuroraButton.addEventListener('click', handleUpgradeAurora);
     if (dom.doEnchantButton) dom.doEnchantButton.addEventListener('click', handleEnchant);
+    if (dom.upgradeTableButton) dom.upgradeTableButton.addEventListener('click', handleEnchantTableUpgrade);
     if (dom.chatSendButton) dom.chatSendButton.addEventListener('click', handleSendMessage);
     if (dom.chatInput) dom.chatInput.addEventListener('keydown', (e: KeyboardEvent) => { if(e.key === 'Enter') handleSendMessage(); });
     if (dom.logoutButton) dom.logoutButton.addEventListener('click', handleLogout);
+    
     ['function', 'totems'].forEach(t => dom[`shopTab${t.charAt(0).toUpperCase() + t.slice(1)}`]?.addEventListener('click', () => switchShopTab(t)));
     
     const showToggle = document.getElementById('setting-show-notifications') as HTMLInputElement;
@@ -380,10 +405,9 @@ function initGame() {
 
 function restartGameLoop() {
     if (gameLoopInterval) clearInterval(gameLoopInterval);
-    if (weatherInterval) clearInterval(weatherInterval);
+    // weatherInterval removed
 
     gameLoopInterval = setInterval(gameLoop, 250 / currentGameSpeed);
-    weatherInterval = setInterval(updateWeather, 60000 / currentGameSpeed);
 }
 
 function startGame() {
@@ -396,11 +420,10 @@ function startGame() {
 
 function stopGame() {
     if (gameLoopInterval) clearInterval(gameLoopInterval);
-    if (weatherInterval) clearInterval(weatherInterval);
-    Object.values(priceUpdateIntervals).forEach(interval => clearInterval(interval));
+    Object.values(priceUpdateIntervals).forEach((interval: any) => clearInterval(interval));
     priceUpdateIntervals = {};
     if (window.autosaveInterval) clearInterval(window.autosaveInterval);
-    gameLoopInterval = weatherInterval = null;
+    gameLoopInterval = null;
     window.autosaveInterval = null;
 }
 
@@ -424,9 +447,14 @@ function updateUI() {
     // FIX: Use Number() for safer type conversion, as values from gameState can be of mixed types.
     for(const key in resourceMap) { if(dom[key]) dom[key].textContent = Math.floor(Number((resourceMap as any)[key])).toLocaleString('ko-KR'); }
 
-    // Handle Aurora Asset Visibility
+    // Handle Aurora Asset Visibility (Asset dashboard)
     if (dom.assetAuroraContainer) {
         dom.assetAuroraContainer.classList.toggle('hidden', state.userAurora <= 0);
+    }
+
+    // Handle Aurora Ticker Visibility (Header)
+    if (dom.tickerAurora) {
+        dom.tickerAurora.classList.toggle('hidden', state.weather !== '오로라');
     }
 
     const updatePriceDisplay = (priceEl: HTMLElement, changeEl: HTMLElement, current: number, last: number) => { if (!priceEl || !changeEl) return; priceEl.textContent = `${current.toLocaleString('ko-KR')} KRW`; const change = current - last; const pct = last > 0 ? ((change / last) * 100).toFixed(2) : '0.00'; if (change > 0) changeEl.innerHTML = `<span class="text-green-500">▲ +${pct}%</span>`; else if (change < 0) changeEl.innerHTML = `<span class="text-red-500">▼ ${pct}%</span>`; else changeEl.innerHTML = `0.00%`; };
@@ -441,41 +469,22 @@ function updateUI() {
     if (dom.weatherDisplay) dom.weatherDisplay.textContent = `${state.weather} ${WEATHER_DATA[state.weather].icon}`;
     if (dom.seasonDisplay) dom.seasonDisplay.textContent = `${state.season} ${SEASON_EMOJI_MAP[state.season as keyof typeof SEASON_EMOJI_MAP]} ${state.dayInSeason}일차`;
 
-    // --- Income Calculation with Enchants ---
-    const isNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
+    // --- Income Calculation ---
     let baseProduction = 0;
     if (state.isCubePurchased) { 
         baseProduction = 100; 
         if (state.isAuroraUpgraded) baseProduction = 1000;
+        else if (state.isDigitalUpgraded) baseProduction = 700;
         else if (state.isPrismUpgraded) baseProduction = 400; 
         else if (state.isEnergyUpgraded) baseProduction = 200; 
     }
     
-    // No lunar bonus cash anymore (changed to mining)
     let totalIncome = baseProduction;
     
-    // Computer Boost: +10% per tier
-    // Safety Check for array access
-    const safeComputerTier = Math.max(0, Math.min(state.computerTier, COMPUTER_DATA.length - 1));
-    const compData = COMPUTER_DATA[safeComputerTier] || COMPUTER_DATA[0];
-    
-    if (state.computerTier > 0) {
-        const boostMultiplier = 1 + (compData.effect);
-        totalIncome *= boostMultiplier;
-    }
-
     // Enchant: Efficiency
     const efficiency = state.activeEnchants.find((e: any) => e.id === 'efficiency');
     if (efficiency) {
         totalIncome *= (1 + (efficiency.level * 0.1));
-    }
-
-    // Enchant: Luck
-    const luck = state.activeEnchants.find((e: any) => e.id === 'luck');
-    if (luck) {
-        if (Math.random() < (luck.level * 0.05)) {
-            totalIncome *= 2; // This visualization might flicker, but applies to actual income
-        }
     }
 
     // Enchant: Investment God (Rare)
@@ -516,27 +525,13 @@ function updateUI() {
 
     // Weather & Debuffs
     let weatherMultiplier = 1;
-    
-    // Thorns: Chance to flip bad weather
-    const thorns = state.activeEnchants.find((e: any) => e.id === 'thorns');
-    let thornsTriggered = false;
-    if (thorns && WEATHER_DATA[state.weather].isBad) {
-        if (Math.random() < (thorns.level * 0.05)) {
-            thornsTriggered = true;
-        }
-    }
-
-    // Defense: Reduce debuff
     const defense = state.activeEnchants.find((e: any) => e.id === 'defense');
     const defenseReduction = defense ? (defense.level * 0.1) : 0;
 
     if (state.weather === '폭염') {
-        if (thornsTriggered) weatherMultiplier = 1; // Negate penalty (or could be bonus)
-        else weatherMultiplier = 0.5 + (0.5 * defenseReduction); // Reduce penalty
+         weatherMultiplier = 0.5 + (0.5 * defenseReduction); 
     }
-
     totalIncome *= weatherMultiplier;
-
     
     if (state.exceptionalState.isActive) { 
         totalIncome *= 2; 
@@ -553,6 +548,7 @@ function updateUI() {
     if (dom.gameTime) {
         const gameHours = gameTime.getHours(); let gameMinutes = String(gameTime.getMinutes()).padStart(2, '0');
         if (state.weather === '폭우' && Math.random() < 0.1) { gameMinutes = '##'; }
+        const isNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
         dom.gameTime.textContent = `${String(gameHours).padStart(2, '0')}:${gameMinutes} (${isNight ? '🌙' : '☀️'})`;
     }
 
@@ -566,16 +562,26 @@ function updateUI() {
 function updateComputerUI() {
     if (!dom.computerTierText || !dom.computerStatsText || !dom.computerUpgradeButton) return;
     const tier = gameState.computerTier;
-    const isMaxTier = tier >= COMPUTER_DATA.length - 1;
+    const isMaxTier = tier >= 5; 
     
-    // FIX: Safety check for array access
     const safeTier = Math.max(0, Math.min(tier, COMPUTER_DATA.length - 1));
     const currentData = COMPUTER_DATA[safeTier] || COMPUTER_DATA[0];
 
     dom.computerTierText.textContent = tier > 0 ? `Tier ${tier} 컴퓨터` : '컴퓨터 없음';
     
-    const boostPercent = tier > 0 ? Math.round(currentData.effect * 100) : 0;
-    dom.computerStatsText.innerHTML = `패시브 수입 +${boostPercent}% 증가`;
+    // Display Effect Stats
+    if (tier > 0) {
+        let effectText = '';
+        const effects = currentData.effect;
+        effectText += `Cube: ${(effects.Cube * 100).toFixed(1)}% `;
+        effectText += `Lunar: ${(effects.Lunar * 100).toFixed(1)}% `;
+        effectText += `Energy: ${(effects.Energy * 100).toFixed(1)}% `;
+        effectText += `Prism: ${(effects.Prism * 100).toFixed(1)}% `;
+        effectText += `Digital: ${(effects.Digital * 100).toFixed(1)}%`;
+        dom.computerStatsText.innerHTML = `<span class="text-xs">분당 채굴 확률:<br/>${effectText}</span>`;
+    } else {
+        dom.computerStatsText.textContent = '효과 없음';
+    }
     
     dom.computerUpgradeButton.classList.toggle('hidden', isMaxTier);
     if (!isMaxTier) {
@@ -637,25 +643,11 @@ function populateFunctionItems() {
     const functionItems = [ 
         { id: 'digitalClock', name: '디지털 시계', desc: '게임 내 시간과 날씨를 화면에 표시합니다.', cost: 10000 },
         { id: 'weatherAlmanac', name: '날씨 도감', desc: '지금까지 경험한 날씨의 효과를 기록하고 확인할 수 있습니다.', cost: 25000 },
+        { id: 'magicBook', name: '마법 도감', desc: '마법 부여의 종류와 효과를 확인할 수 있습니다.', cost: 30000 },
         { id: 'bed', name: '침대', desc: '수면을 취하여 다음 날 아침으로 즉시 이동할 수 있게 됩니다.', cost: 15000 },
-        { id: 'enchantTable1', name: '1티어 마법 부여대', desc: '마법 부여를 시작할 수 있습니다. (최대 레벨 III)', cost: 50000 },
-        { id: 'enchantTable2', name: '2티어 마법 부여대', desc: '더 높은 등급의 마법을 부여합니다. (최대 레벨 IV)', cost: 100000 },
-        { id: 'enchantTable3', name: '3티어 마법 부여대', desc: '마법 부여 효율이 증가합니다. (최대 레벨 V)', cost: 200000 },
-        { id: 'enchantTable4', name: '4티어 마법 부여대', desc: '희귀 마법이 등장할 확률이 생깁니다. (최대 레벨 VI)', cost: 500000 },
-        { id: 'enchantTable5', name: '5티어 마법 부여대', desc: '최고 등급의 마법과 저주를 부여합니다. (최대 레벨 VII)', cost: 1000000 },
     ];
     functionItems.forEach(item => {
         const isOwned = gameState.shopItems[item.id];
-        
-        // Check requirements for upgrade tables
-        let isDisabled = false;
-        if (item.id.startsWith('enchantTable')) {
-            const tier = parseInt(item.id.replace('enchantTable', ''));
-            if (tier > 1 && !gameState.shopItems[`enchantTable${tier-1}`]) {
-                isDisabled = true;
-            }
-        }
-
         const cost = item.cost;
         const canAfford = gameState.userCash >= cost;
         const itemEl = document.createElement('div');
@@ -665,58 +657,85 @@ function populateFunctionItems() {
                 <h4 class="font-bold text-base">${item.name}</h4>
                 <p class="text-xs text-gray-400 my-1">${item.desc}</p>
             </div>
-            <button class="w-full mt-2 text-sm font-bold py-1.5 px-3 rounded-lg ${isOwned ? 'bg-green-700 cursor-default' : (canAfford && !isDisabled ? 'bg-blue-600 hover:bg-blue-700' : 'btn-disabled')}" ${isOwned || !canAfford || isDisabled ? 'disabled' : ''}>
-                ${isOwned ? '보유중' : (isDisabled ? '이전 단계 필요' : `${cost.toLocaleString()} KRW`)}
+            <button class="w-full mt-2 text-sm font-bold py-1.5 px-3 rounded-lg ${isOwned ? 'bg-green-700 cursor-default' : (canAfford ? 'bg-blue-600 hover:bg-blue-700' : 'btn-disabled')}" ${isOwned || !canAfford ? 'disabled' : ''}>
+                ${isOwned ? '보유중' : `${cost.toLocaleString()} KRW`}
             </button>
         `;
-        if (!isOwned && !isDisabled) {
+        if (!isOwned) {
             itemEl.querySelector('button')?.addEventListener('click', () => handleShopBuy(item.id, cost));
         }
         dom.shopItems.appendChild(itemEl);
     });
 }
+
+// Helper to generate daily stock
+function refreshTotemStock() {
+    const stock: {[key: string]: number} = {};
+    Object.keys(TOTEM_DATA).forEach(key => {
+        const totem = TOTEM_DATA[key];
+        const chance = (500000 / totem.cost) * 0.01;
+        
+        if (Math.random() < chance) {
+            let quantity = Math.floor(Math.random() * 3) + 1; // 1 to 3
+            if (totem.tier === 5) quantity = 1; // Aurora max 1
+            stock[key] = quantity;
+        }
+    });
+    gameState.totemStock = stock;
+    gameState.lastTotemRefresh = Date.now();
+    saveGameState();
+    populateTotemItems();
+}
+
 function populateTotemItems() {
     if (!dom.totemItems) return;
-    dom.totemItems.innerHTML = '';
+    dom.totemItems.innerHTML = ''; // Clear previous items to prevent duplicates
+    
+    if (!gameState.totemStock || Object.keys(gameState.totemStock).length === 0) {
+        if (Date.now() - gameState.lastTotemRefresh > 5 * 60 * 1000) {
+            refreshTotemStock();
+        }
+    }
+
     Object.keys(TOTEM_DATA).forEach(key => {
         const totem = TOTEM_DATA[key];
         const hasExperienced = totem.type === 'weather' ? gameState.experiencedWeathers[totem.effect] : true;
-        const purchaseLimit = TOTEM_PURCHASE_LIMITS[totem.tier as keyof typeof TOTEM_PURCHASE_LIMITS];
-        const purchaseCount = gameState.totemPurchaseCounts[totem.tier] || 0;
-        const isSoldOut = purchaseCount >= purchaseLimit;
-        const canAfford = gameState.userCash >= totem.cost;
+        
+        const stock = gameState.totemStock[key] || 0;
+        const canAffordCash = gameState.userCash >= totem.cost;
+        
+        const magicStoneCost = Math.floor(totem.cost / 10000);
+        const canAffordStones = gameState.userMagicStone >= magicStoneCost;
 
-        let buttonText = `${totem.cost.toLocaleString()} KRW`;
+        // Clarified Cost Display: KRW + Magic Stone
+        let buttonText = `${totem.cost.toLocaleString()} KRW + ${magicStoneCost} MS`;
         let isDisabled = false;
         let buttonClass = 'bg-purple-600 hover:bg-purple-700';
-
         let totemName = totem.name;
         let totemDesc = totem.desc;
 
         if (totem.type === 'weather' && !hasExperienced) {
             totemName = '???';
             totemDesc = '해당 날씨를 경험하면 잠금 해제됩니다.';
-        }
-
-        if (!hasExperienced) {
-            buttonText = '경험 필요';
             isDisabled = true;
+            buttonText = '경험 필요';
             buttonClass = 'btn-disabled';
-        } else if (isSoldOut) {
-            buttonText = `시즌 구매 완료 (${purchaseCount}/${purchaseLimit})`;
+        } else if (stock <= 0) {
+            buttonText = '품절 (계산 중...)'; // Text updated via loop
             isDisabled = true;
             buttonClass = 'bg-gray-500 cursor-default';
-        } else if (!canAfford) {
-            buttonText = `${totem.cost.toLocaleString()} KRW`;
+        } else if (!canAffordCash || !canAffordStones) {
             isDisabled = true;
             buttonClass = 'btn-disabled';
         }
 
         const itemEl = document.createElement('div');
         itemEl.className = 'bg-gray-800 p-3 rounded-lg flex flex-col justify-between';
+        itemEl.setAttribute('data-totem-id', key); // For updates
+        
         itemEl.innerHTML = `
             <div>
-                <h4 class="font-bold text-base">${totemName}</h4>
+                <h4 class="font-bold text-base flex justify-between">${totemName} <span class="text-xs font-normal bg-gray-700 px-1 rounded">재고: ${stock}</span></h4>
                 <p class="text-xs text-gray-400 my-1">${totemDesc}</p>
             </div>
             <button id="buy-totem-${key}" class="w-full mt-2 text-sm font-bold py-1.5 px-3 rounded-lg ${buttonClass}" ${isDisabled ? 'disabled' : ''}>
@@ -730,22 +749,45 @@ function populateTotemItems() {
     });
 }
 
+function updateTotemTimers() {
+    if (!dom.totemItems) return;
+    const now = Date.now();
+    const restockTime = gameState.lastTotemRefresh + (5 * 60 * 1000);
+    const diff = Math.max(0, restockTime - now);
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    const timerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    // Update Header Timer
+    if (dom.totemTimerDisplay) {
+        dom.totemTimerDisplay.textContent = `(갱신 까지: ${timerText})`;
+    }
+
+    const buttons = dom.totemItems.querySelectorAll('button');
+    buttons.forEach((btn: HTMLButtonElement) => {
+        if (btn.disabled && btn.textContent?.includes('품절')) {
+             btn.textContent = `품절 (${timerText} 후 갱신)`;
+        }
+    });
+}
+
 function handleTotemBuy(totemId: string) {
     const totem = TOTEM_DATA[totemId];
     if (!totem) return;
 
-    const hasExperienced = totem.type === 'weather' ? gameState.experiencedWeathers[totem.effect] : true;
-    const purchaseLimit = TOTEM_PURCHASE_LIMITS[totem.tier as keyof typeof TOTEM_PURCHASE_LIMITS];
-    const purchaseCount = gameState.totemPurchaseCounts[totem.tier] || 0;
-    const isSoldOut = purchaseCount >= purchaseLimit;
-    const canAfford = gameState.userCash >= totem.cost;
+    const stock = gameState.totemStock[totemId] || 0;
+    if (stock <= 0) { showNotification('재고가 없습니다.', true); return; }
 
-    if (!hasExperienced) { showNotification('해당 날씨를 경험해야 구매할 수 있습니다.', true); return; }
-    if (isSoldOut) { showNotification('이번 시즌 구매 한도를 초과했습니다.', true); return; }
-    if (!canAfford) { showNotification('자금이 부족합니다.', true); return; }
+    const magicStoneCost = Math.floor(totem.cost / 10000);
+
+    if (gameState.userCash < totem.cost) { showNotification('자금이 부족합니다.', true); return; }
+    if (gameState.userMagicStone < magicStoneCost) { showNotification('마법석이 부족합니다.', true); return; }
 
     gameState.userCash -= totem.cost;
-    gameState.totemPurchaseCounts[totem.tier]++;
+    gameState.userMagicStone -= magicStoneCost;
+    gameState.totemStock[totemId]--;
+    gameState.totemPurchaseCounts[totem.tier] = (gameState.totemPurchaseCounts[totem.tier] || 0) + 1;
 
     if (totem.type === 'weather') {
         const isNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
@@ -758,7 +800,6 @@ function handleTotemBuy(totemId: string) {
             gameState.weather = totem.effect;
             gameState.experiencedWeathers[totem.effect] = true;
             
-            // Rare Enchant: God of Weather trigger
             const weatherGod = gameState.activeEnchants.find((e: any) => e.id === 'weatherGod');
             if (weatherGod) {
                 gameState.totemWeatherActive = { isActive: true, expiresAt: Date.now() + 30000 };
@@ -766,7 +807,6 @@ function handleTotemBuy(totemId: string) {
             } else {
                 showNotification(`${totem.name} 효과로 날씨가 즉시 변경되었습니다!`, false);
             }
-
             checkTrophies();
             startPriceUpdateLoops();
         } else {
@@ -783,21 +823,14 @@ function handleTotemBuy(totemId: string) {
     populateTotemItems(); // Re-render shop
     saveGameState();
 }
+
 function handleShopBuy(itemId: string, cost: number) {
     if (gameState.userCash >= cost && !gameState.shopItems[itemId]) {
         gameState.userCash -= cost;
         gameState.shopItems[itemId] = true;
-        
-        // If buying a table, update state
-        if (itemId.startsWith('enchantTable')) {
-            const tier = parseInt(itemId.replace('enchantTable', ''));
-            gameState.enchantTableTier = Math.max(gameState.enchantTableTier, tier);
-        }
-
         showNotification(`${itemId} 구매 완료!`, false);
         populateShopUI();
         restoreUIState();
-        updateEnchantUI();
         saveGameState();
     } else {
         showNotification('자금이 부족하거나 이미 보유한 아이템입니다.', true);
@@ -840,6 +873,38 @@ function updateWeatherAlmanacUI() {
         dom.weatherAlmanacContent.appendChild(el);
     });
 }
+
+function updateMagicAlmanacUI() {
+    if (!dom.magicAlmanacSection || !dom.magicAlmanacContent) return;
+    const hasBook = gameState.shopItems.magicBook;
+    dom.magicAlmanacSection.classList.toggle('hidden', !hasBook);
+    if(!hasBook) return;
+
+    dom.magicAlmanacContent.innerHTML = '';
+
+    const enchants = [
+        { name: '효율 (Efficiency)', desc: '패시브 수입이 레벨당 10% 증가합니다.' },
+        { name: '행운 (Luck)', desc: '5% 확률로 수입 틱이 2배가 됩니다.' },
+        { name: '방어 (Defense)', desc: '나쁜 날씨의 페널티를 레벨당 10% 감소시킵니다.' },
+        { name: '내구성 (Durability)', desc: '아이템이 파괴될 확률을 줄여줍니다. (현재 미구현 효과)' },
+        { name: '가시 (Thorns)', desc: '나쁜 날씨에 일정 확률로 페널티를 무시합니다.' },
+        { name: '날씨의 신 (Rare)', desc: '토템으로 날씨 변경 시 30초간 수입이 2배가 됩니다.' },
+        { name: '이진법 (Rare)', desc: '매 분마다 일정 확률로 데이터 결정을 채굴합니다.' },
+        { name: '마법의 손 (Rare)', desc: '마법석 채굴 확률이 1.5배 증가합니다.' },
+        { name: '투자의 신 (Rare)', desc: '매수 시 5초간 수입이 2배가 됩니다.' },
+        { name: '코인비 (Rare)', desc: '비 날씨에 1% 확률로 랜덤 코인을 획득합니다.' },
+        { name: '제우스의 저주 (Curse)', desc: '천둥 날씨에 인터넷이 끊길 확률이 증가하지만, 수입도 2배가 됩니다.' },
+        { name: '소매치기의 저주 (Curse)', desc: '시야 차단 날씨(황사/폭염/눈)에 수입이 반토막납니다. 그 외에는 2배입니다.' },
+    ];
+
+    enchants.forEach(enc => {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-800/50 p-2 rounded';
+        div.innerHTML = `<h5 class="font-bold text-purple-300">${enc.name}</h5><p class="text-xs text-gray-400">${enc.desc}</p>`;
+        dom.magicAlmanacContent.appendChild(div);
+    });
+}
+
 function updateTrophyUI() {
     if (!dom.trophyList) return;
     dom.trophyList.innerHTML = '';
@@ -868,7 +933,6 @@ function checkTrophies() {
 }
 
 function getNewPrice(coinId: string) {
-    // Check for global override first
     if (globalPriceOverrides && globalPriceOverrides[coinId]) {
         return globalPriceOverrides[coinId];
     }
@@ -876,7 +940,6 @@ function getNewPrice(coinId: string) {
     const coinConfig = COIN_DATA[coinId];
     if (!coinConfig) return gameState[coinConfig.priceKey];
 
-    // Special Rule for Aurora Coin
     if (coinId === 'Aurora' && gameState.weather !== '오로라') {
         return gameState[coinConfig.priceKey];
     }
@@ -887,7 +950,6 @@ function getNewPrice(coinId: string) {
     let upChance = (typeof coinConfig.upChance === 'object') ? coinConfig.upChance[timeOfDay] : coinConfig.upChance;
     const fluctuation = coinConfig.fluctuation[timeOfDay];
 
-    // Weather effects
     const weatherEffect = WEATHER_DATA[gameState.weather];
     if (weatherEffect.isGood) upChance += 0.025;
     if (weatherEffect.isBad) upChance -= 0.025;
@@ -896,19 +958,18 @@ function getNewPrice(coinId: string) {
     if (gameState.weather === '별똥별') upChance += 0.025;
     if (gameState.weather === '우박') upChance -= 0.025;
 
-
-    // Trophy effects
     if (gameState.hasPowerTrophy && coinId === 'Energy') upChance += 0.01;
+
+    // Computer Boost REMOVED (Moved to mining mechanics)
     
-    // Determine magnitude
     const rand = Math.random();
     let magnitude;
     if (rand < fluctuation.large) {
-        magnitude = (Math.random() * 0.08) + 0.07; // 7% ~ 15%
+        magnitude = (Math.random() * 0.08) + 0.07;
     } else if (rand < fluctuation.large + fluctuation.medium) {
-        magnitude = (Math.random() * 0.04) + 0.03; // 3% ~ 7%
+        magnitude = (Math.random() * 0.04) + 0.03;
     } else {
-        magnitude = (Math.random() * 0.02) + 0.01; // 1% ~ 3%
+        magnitude = (Math.random() * 0.02) + 0.01;
     }
 
     let multiplier = 1 + magnitude;
@@ -920,8 +981,6 @@ function getNewPrice(coinId: string) {
     } else {
         newPrice = currentPrice / multiplier;
     }
-
-    // Clamp price within min/max bounds
     return Math.floor(Math.max(coinConfig.minPrice, Math.min(coinConfig.maxPrice, newPrice)));
 }
 
@@ -943,7 +1002,6 @@ function startPriceUpdateLoops() {
         const isNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
         let interval = (typeof coinConfig.interval === 'object') ? coinConfig.interval[isNight ? 'night' : 'day'] : coinConfig.interval;
 
-        // Apply weather/trophy time modifiers
         if (gameState.weather === '황사') interval *= 1.1;
         if (gameState.weather === '오로라') interval *= 0.8;
         if (isNight && gameState.hasTimeTrophy) interval *= 0.95;
@@ -959,19 +1017,63 @@ function gameLoop() {
     const currentMinutes = gameTime.getMinutes();
 
     const oldIsNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
-    if (currentMinutes === 0) { // Check for day/night change on the hour
+    if (currentMinutes === 0) { 
+        // New Hour: Update Weather
+        updateWeather();
+        
         const newIsNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
         if(oldIsNight !== newIsNight) {
-            startPriceUpdateLoops(); // Restart loops if day/night status changes
+            startPriceUpdateLoops();
         }
     }
     
+    // Update Weather Timer
+    if (dom.weatherTimer) {
+        const minutesLeft = 60 - currentMinutes;
+        const secondsLeft = Math.ceil(minutesLeft * 0.25 / currentGameSpeed);
+        dom.weatherTimer.textContent = `${secondsLeft}s`;
+    }
+    
+    // Update Totem Timers
+    updateTotemTimers();
+
+    // Computer Mining (Real Time 1 Minute)
+    if (state.computerTier > 0) {
+        const now = Date.now();
+        if (now - (state.lastMiningTimestamp || 0) >= 60000) { // 60000ms = 1 min
+            state.lastMiningTimestamp = now;
+            
+            const tier = state.computerTier;
+            const probs = {
+                userCubes: 0.025 * tier,
+                userLunar: 0.02 * tier,
+                userEnergy: 0.015 * tier,
+                userPrisms: 0.01 * tier,
+                userDigital: 0.005 * tier
+            };
+            
+            let mined = [];
+            if (Math.random() < probs.userCubes) { state.userCubes++; mined.push('CUBE'); }
+            if (Math.random() < probs.userLunar) { state.userLunar++; mined.push('LUNAR'); }
+            if (Math.random() < probs.userEnergy) { state.userEnergy++; mined.push('ENERGY'); }
+            if (Math.random() < probs.userPrisms) { state.userPrisms++; mined.push('PRISM'); }
+            if (Math.random() < probs.userDigital) { state.userDigital++; mined.push('DIGITAL'); }
+            
+            if (mined.length > 0) {
+                showNotification(`🖥️ 컴퓨터 채굴 성공: ${mined.join(', ')}`, false);
+            }
+        }
+    }
+
+    // Totem Refresh (Every 5 real minutes)
+    if (Date.now() - state.lastTotemRefresh > 5 * 60 * 1000) {
+        refreshTotemStock();
+    }
+
     if (gameTime.getHours() === 0 && currentMinutes === 0) { state.dayInSeason++; if (state.dayInSeason > 3) { state.dayInSeason = 1; state.season = SEASONS[(SEASONS.indexOf(state.season) + 1) % SEASONS.length]; state.totemPurchaseCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }; populateShopUI(); } }
     
-    // Weather logic
     if (globalWeatherOverride) { if(gameState.weather !== globalWeatherOverride) { gameState.weather = globalWeatherOverride; startPriceUpdateLoops(); } }
     
-    // Zeus Curse: 2x chance for outage if Thunder
     let outageChance = 0.05;
     const zeus = state.activeEnchants.find((e: any) => e.id === 'zeus');
     if (zeus && state.weather === '천둥') outageChance = 0.1;
@@ -985,48 +1087,63 @@ function gameLoop() {
     if (state.isInternetOutage && Date.now() > state.isInternetOutageCooldown) { state.isInternetOutage = false; showNotification('인터넷 연결이 복구되었습니다.', false); }
     if (dom.internetOutage) dom.internetOutage.classList.toggle('hidden', !state.isInternetOutage);
     
-    // --- Mining Logic ---
-    // 1. LUNAR Upgrade: Magic Stone Mining (Every 20 mins)
-    if (state.isLunarUpgraded && currentMinutes % 20 === 0 && currentMinutes !== previousMinutes) {
-        let chance = 0.05;
-        if (oldIsNight) chance *= 2;
-        if (state.weather === '별똥별') chance *= 4;
-        if (state.weather === '오로라') chance *= 8;
+    // --- Mining Logic (User Actions & Passive) ---
+    // Calculate Magic Stone Probability for Display
+    let magicStoneChance = 0.10; // Base 10%
+    // Lunar multiplier removed. Now just base unlock.
+    if (state.lunarMiningLevel < 1) magicStoneChance = 0;
 
-        // Magic Hand Enchant
+    if (state.lunarMiningLevel >= 1) {
+        if (state.isEnergyUpgraded) magicStoneChance *= 2;
+        if (state.isPrismUpgraded) magicStoneChance *= 2; // CHANGED: Prism now 2x (was 4x)
+        if (oldIsNight) magicStoneChance *= 2;
+        if (state.weather === '별똥별') magicStoneChance *= 4;
+        if (state.weather === '오로라') magicStoneChance *= 8;
         const magicHand = state.activeEnchants.find((e: any) => e.id === 'magicHand');
-        if (magicHand) chance *= 1.5;
+        if (magicHand) magicStoneChance *= 1.5;
+    }
 
-        if (Math.random() < chance) {
+    if (dom.probMagicStone) dom.probMagicStone.textContent = `${(magicStoneChance * 100).toFixed(1)}% (20min)`;
+
+    // 1. LUNAR Upgrade: Magic Stone Mining (Every 20 mins)
+    if (state.lunarMiningLevel >= 1 && currentMinutes % 20 === 0 && currentMinutes !== previousMinutes) {
+        if (Math.random() < magicStoneChance) {
             state.userMagicStone = (state.userMagicStone || 0) + 1;
             showNotification('마법석을 채굴했습니다!', false);
         }
     }
 
-    // 2. Binary Enchant: Data Crystal Mining
-    // Rate: Tier * 10% per minute
+    // 2. Binary Enchant OR Digital Upgrade: Data Crystal Mining
     const binary = state.activeEnchants.find((e: any) => e.id === 'binary');
-    if (binary) {
-        let chance = (binary.level * 0.1); // e.g. Level 1 = 10%
-
-        // Magic Hand Enchant
+    
+    // Binary Logic (per minute)
+    if (binary && currentMinutes !== previousMinutes) {
+        let chance = (binary.level * 0.1);
         const magicHand = state.activeEnchants.find((e: any) => e.id === 'magicHand');
         if (magicHand) chance *= 1.5;
-
         if (Math.random() < chance) {
             state.userDataCrystal = (state.userDataCrystal || 0) + 1;
-            // Log to console rarely to avoid spam or show occasional notification
-            // showNotification('데이터 결정을 채굴했습니다!', false); 
+        }
+    }
+
+    // Digital Upgrade Logic (per 2 seconds)
+    let dcChance = 0;
+    if (state.isDigitalUpgraded) dcChance = 0.1;
+    if (dom.probDataCrystal) dom.probDataCrystal.textContent = `${(dcChance * 100).toFixed(0)}% (2s)`;
+
+    state.dataCrystalTick = (state.dataCrystalTick || 0) + 1;
+    if (state.isDigitalUpgraded && state.dataCrystalTick >= 8) { // Approx 2 seconds
+        state.dataCrystalTick = 0;
+        if (Math.random() < dcChance) {
+             state.userDataCrystal = (state.userDataCrystal || 0) + 1;
         }
     }
     
-    // 3. Coin Rain Enchant
     const coinRain = state.activeEnchants.find((e: any) => e.id === 'coinRain');
     if (coinRain && state.weather === '비' && Math.random() < 0.01) {
         const coins = ['userCubes', 'userLunar', 'userEnergy', 'userPrisms'];
         const randCoin = coins[Math.floor(Math.random() * coins.length)];
         state[randCoin] += 1;
-        // showNotification('코인비가 내립니다!', false);
     }
 
     // Income Logic
@@ -1034,30 +1151,18 @@ function gameLoop() {
     if(state.isCubePurchased) { 
         baseProduction = 100; 
         if (state.isAuroraUpgraded) baseProduction = 1000;
+        else if (state.isDigitalUpgraded) baseProduction = 700;
         else if (state.isPrismUpgraded) baseProduction = 400; 
         else if (state.isEnergyUpgraded) baseProduction = 200; 
     }
     
     let totalIncome = baseProduction; 
 
-    // Computer Boost
-    // FIX: Safety access
-    const safeTier = Math.max(0, Math.min(state.computerTier, COMPUTER_DATA.length - 1));
-    const compData = COMPUTER_DATA[safeTier] || COMPUTER_DATA[0];
-    
-    if (state.computerTier > 0) {
-        const boostMultiplier = 1 + (compData.effect);
-        totalIncome *= boostMultiplier;
-    }
-
-    // Enchant: Efficiency
     const efficiency = state.activeEnchants.find((e: any) => e.id === 'efficiency');
     if (efficiency) totalIncome *= (1 + (efficiency.level * 0.1));
 
-    // Enchant: Zeus
     if (zeus && state.weather === '천둥') totalIncome *= 2;
 
-    // Enchant: Pickpocket
     const pickpocket = state.activeEnchants.find((e: any) => e.id === 'pickpocket');
     if (pickpocket) {
         const isScreenBlock = ['황사', '폭염', '눈'].includes(state.weather);
@@ -1065,7 +1170,6 @@ function gameLoop() {
         else totalIncome *= 2;
     }
 
-    // Enchant: Defense & Thorns interaction for Heat Wave
     const defense = state.activeEnchants.find((e: any) => e.id === 'defense');
     const defenseReduction = defense ? (defense.level * 0.1) : 0;
     const thorns = state.activeEnchants.find((e: any) => e.id === 'thorns');
@@ -1075,23 +1179,19 @@ function gameLoop() {
     }
 
     if (state.weather === '폭염') {
-        if (thornsTriggered) {} // No penalty
+        if (thornsTriggered) {}
         else totalIncome *= (0.5 + (0.5 * defenseReduction));
     }
 
-    // Enchant: Investment God
     if (state.investmentBonus && state.investmentBonus.isActive && Date.now() < state.investmentBonus.expiresAt) {
         totalIncome *= 2;
     }
-    // Enchant: Weather God
     if (state.totemWeatherActive && state.totemWeatherActive.isActive && Date.now() < state.totemWeatherActive.expiresAt) {
         totalIncome *= 2;
     }
 
-
     if (state.exceptionalState.isActive) { if(Date.now() > state.exceptionalState.expiresAt) { state.exceptionalState.isActive = false; } else { totalIncome *= 2; } }
     
-    // Enchant: Luck (apply to final income addition chance)
     const luck = state.activeEnchants.find((e: any) => e.id === 'luck');
     if (luck && Math.random() < (luck.level * 0.05)) {
         totalIncome *= 2;
@@ -1099,7 +1199,6 @@ function gameLoop() {
 
     state.userCash += totalIncome / 4;
     
-    // v2 Update Banner Logic
     if (dom.updateBanner && dom.countdownTimer) {
         const showBannerThreshold = 5 * 60 * 60 * 1000; // 5 hours in ms
         const timeToUpdate = V2_UPDATE_TIMESTAMP - Date.now();
@@ -1110,7 +1209,9 @@ function gameLoop() {
             const seconds = Math.floor((timeToUpdate % (1000 * 60)) / 1000);
             dom.countdownTimer.textContent = `${String(hours).padStart(2, '0')}시간 ${String(minutes).padStart(2, '0')}분 ${String(seconds).padStart(2, '0')}초`;
         } else {
-            dom.updateBanner.classList.add('hidden');
+            // Keeping the new banner visible always as per "USE CODE MAGIC"
+            // We will just let the banner defined in HTML stay.
+            // Or override text if timer is not needed.
         }
     }
 
@@ -1123,10 +1224,9 @@ function updateWeather() {
     const isNight = gameTime.getHours() < 9 || gameTime.getHours() >= 19;
     const season = gameState.season;
 
-    // 1. Check for totem override
     if (gameState.nextWeatherOverride) {
         const targetWeather = gameState.nextWeatherOverride;
-        gameState.nextWeatherOverride = null; // Consume the override
+        gameState.nextWeatherOverride = null; 
         
         const totemKey = Object.keys(TOTEM_DATA).find(k => TOTEM_DATA[k].effect === targetWeather);
         if (totemKey) {
@@ -1139,7 +1239,6 @@ function updateWeather() {
                     gameState.weather = targetWeather;
                     gameState.experiencedWeathers[targetWeather] = true;
                     
-                    // Weather God Enchant Check
                     const weatherGod = gameState.activeEnchants.find((e: any) => e.id === 'weatherGod');
                     if (weatherGod) {
                         gameState.totemWeatherActive = { isActive: true, expiresAt: Date.now() + 30000 };
@@ -1151,22 +1250,19 @@ function updateWeather() {
                     checkTrophies();
                     startPriceUpdateLoops();
                 }
-                return; // Weather changed successfully
+                return;
             } else {
                 showNotification(`${targetWeather} 토템을 사용하기 위한 계절/시간 조건이 맞지 않아 실패했습니다.`, true);
             }
         }
     }
 
-    // 2. Generate random weather
     let weights: { [key: string]: number } = {};
     const addWeight = (w: string, val: number) => { weights[w] = (weights[w] || 0) + val; };
 
-    // Base weights
     addWeight('맑음', 20); addWeight('구름', 20); addWeight('비', 15); addWeight('바람', 10);
     addWeight('무지개', 1); addWeight('산성비', 2); addWeight('천둥', 2);
 
-    // Seasonal adjustments
     if (season === '봄') {
         addWeight('비', 15); addWeight('황사', 5); weights['구름'] -= 5;
     } else if (season === '여름') {
@@ -1179,13 +1275,11 @@ function updateWeather() {
        addWeight('눈', 20); addWeight('우박', 2);
     }
     
-    // Night-specific weather
     if (isNight) {
         addWeight('별똥별', 5);
         if (season === '겨울') { addWeight('오로라', 1); weights['별똥별'] -= 1;}
     }
 
-    // Trophy adjustment
     if (gameState.hasWeatherTrophy) {
         Object.keys(weights).forEach(w => {
             if (WEATHER_DATA[w]?.isGood) weights[w] *= 1.025;
@@ -1247,7 +1341,6 @@ function handleTrade(type: 'buy' | 'sell', coinId: string) {
             gameState[coinConfig.amountKey] += amount;
             addTransaction(type, coinId, amount, price);
             
-            // Investment God Enchant Trigger
             const investGod = gameState.activeEnchants.find((e: any) => e.id === 'investmentGod');
             if (investGod) {
                 gameState.investmentBonus = { isActive: true, expiresAt: Date.now() + 5000 };
@@ -1321,7 +1414,10 @@ function handleBuy3DCube() {
 }
 function handleComputerUpgrade() {
     const tier = gameState.computerTier;
-    if (tier >= COMPUTER_DATA.length - 1) return;
+    if (tier >= 5) { // Capped at Tier 5
+        showNotification('이미 최고 티어입니다.', true);
+        return;
+    }
     const costData = COMPUTER_DATA[tier + 1];
     const cost = costData.cost;
     
@@ -1347,13 +1443,20 @@ function handleComputerUpgrade() {
 }
 
 function handleUpgradeLunar() {
-    if (gameState.userLunar >= 200 && !gameState.isLunarUpgraded) {
-        gameState.userLunar -= 200;
-        gameState.isLunarUpgraded = true;
-        showNotification('LUNAR 강화 완료! 이제 마법석을 채굴합니다.', false);
-        restoreUIState(); saveGameState();
-    } else { showNotification('LUNAR 코인이 부족합니다.', true); }
+    // Unlock logic (Level 0 -> 1) ONLY. No more scaling.
+    if (gameState.lunarMiningLevel === 0) {
+        if (gameState.userLunar >= 200) {
+            gameState.userLunar -= 200;
+            gameState.isLunarUpgraded = true;
+            gameState.lunarMiningLevel = 1;
+            showNotification('LUNAR 강화 잠금 해제! 마법석 채굴 시작 (Lv.1)', false);
+            restoreUIState(); saveGameState();
+        } else { showNotification('LUNAR 코인이 부족합니다 (200개 필요).', true); }
+    } else {
+        showNotification('LUNAR 강화가 이미 완료되었습니다.', true);
+    }
 }
+
 function handleUpgradeEnergy() {
     if (gameState.userEnergy >= 100 && !gameState.isEnergyUpgraded) {
         gameState.userEnergy -= 100;
@@ -1370,7 +1473,17 @@ function handleUpgradePrism() {
         restoreUIState(); saveGameState();
     } else { showNotification('PRISM 코인이 부족합니다.', true); }
 }
+function handleUpgradeDigital() {
+    // Cost changed to DIGITAL (from Prism)
+    if (gameState.userDigital >= 100 && !gameState.isDigitalUpgraded) {
+        gameState.userDigital -= 100; 
+        gameState.isDigitalUpgraded = true;
+        showNotification('DIGITAL 강화 완료! 데이터 결정 채굴 시작.', false);
+        restoreUIState(); saveGameState();
+    } else { showNotification('DIGITAL 코인이 부족합니다 (100개 필요).', true); }
+}
 function handleUpgradeAurora() {
+    // Cost changed to AURORA (from Digital)
     if (gameState.userAurora >= 100 && !gameState.isAuroraUpgraded) {
         gameState.userAurora -= 100;
         gameState.isAuroraUpgraded = true;
@@ -1379,11 +1492,38 @@ function handleUpgradeAurora() {
     } else { showNotification('AURORA 코인이 부족합니다.', true); }
 }
 
+function handleEnchantTableUpgrade() {
+    const nextTier = gameState.enchantTableTier + 1;
+    if (nextTier > 5) {
+        showNotification('이미 최고 등급입니다.', true);
+        return;
+    }
+
+    const upgradeCost = TABLE_UPGRADE_COSTS[nextTier - 1]; // Array index 0 is Tier 1 cost
+    
+    if (gameState.userCash < upgradeCost.cash) {
+        showNotification(`자금이 부족합니다 (${upgradeCost.cash.toLocaleString()} KRW 필요)`, true);
+        return;
+    }
+    if (gameState.userMagicStone < upgradeCost.stones) {
+        showNotification(`마법석이 부족합니다 (${upgradeCost.stones}개 필요)`, true);
+        return;
+    }
+
+    gameState.userCash -= upgradeCost.cash;
+    gameState.userMagicStone -= upgradeCost.stones;
+    gameState.enchantTableTier = nextTier;
+    
+    showNotification(`${TABLE_DATA[nextTier].name} 구매/강화 완료!`, false);
+    updateEnchantUI();
+    saveGameState();
+}
+
 // --- Enchantment Logic ---
 function handleEnchant() {
     const tier = gameState.enchantTableTier;
     if (tier === 0) {
-        showNotification('마법 부여대가 없습니다. 상점에서 구매하세요.', true);
+        showNotification('마법 부여대가 없습니다. 구매해주세요.', true);
         return;
     }
     const tableData = TABLE_DATA[tier];
@@ -1394,18 +1534,10 @@ function handleEnchant() {
 
     gameState.userMagicStone -= tableData.stoneCost;
     
-    // Logic to roll enchants
-    // 1. Determine number of enchants to roll (random 1 to maxEnchants, weighted towards fewer)
-    const countRoll = Math.random();
-    let numEnchants = 1;
-    if (tier >= 2 && countRoll < 0.4) numEnchants = 2;
-    if (tier >= 3 && countRoll < 0.2) numEnchants = 3;
-    if (tier >= 4 && countRoll < 0.1) numEnchants = 4;
-    if (tier >= 5 && countRoll < 0.05) numEnchants = 5;
+    const minEnchants = Math.max(1, tableData.maxEnchants - 2);
+    const range = tableData.maxEnchants - minEnchants + 1; // +1 for inclusive
+    const numEnchants = Math.floor(Math.random() * range) + minEnchants;
 
-    numEnchants = Math.min(numEnchants, tableData.maxEnchants);
-
-    // 2. Available Enchants pool
     const pool = [
         { id: 'efficiency', name: '효율', maxLevel: 7 },
         { id: 'luck', name: '행운', maxLevel: 5 },
@@ -1438,32 +1570,26 @@ function handleEnchant() {
         let isRare = false;
         let isCurse = false;
 
-        // Roll for type
         const typeRoll = Math.random();
         
-        if (tier >= 5 && typeRoll < 0.1) {
-            // Curse (only tier 5 has curses in pool per prompt logic implicitly, or explicit added)
+        // Reduced Rare probabilities by ~3x again
+        // Curse: 0.01 (1%), Rare T4: 0.02 (2%), Rare: 0.015 (1.5%)
+        if (tier >= 5 && typeRoll < 0.01) { 
             selected = cursePool[Math.floor(Math.random() * cursePool.length)];
             isCurse = true;
-        } else if (tier >= 4 && typeRoll < 0.2) {
-            // Rare Tier 4+
+        } else if (tier >= 4 && typeRoll < 0.02) { 
             const combinedRare = [...rarePool, ...rarePoolTier4];
             selected = combinedRare[Math.floor(Math.random() * combinedRare.length)];
             isRare = true;
-        } else if (tier >= 1 && typeRoll < 0.15) {
-            // Rare Tier 1-3
+        } else if (tier >= 1 && typeRoll < 0.015) { 
             selected = rarePool[Math.floor(Math.random() * rarePool.length)];
             isRare = true;
         } else {
-            // Normal
             selected = pool[Math.floor(Math.random() * pool.length)];
         }
 
-        // Determine Level based on Tier and Max Level of Enchant
         if (!isRare && !isCurse) {
-             // Max level cap from table
              const tableMax = tableData.maxLevel;
-             // Weighted random for level
              const lvlRoll = Math.random();
              if (lvlRoll < 0.5) level = 1;
              else if (lvlRoll < 0.8) level = Math.min(2, tableMax);
@@ -1471,7 +1597,6 @@ function handleEnchant() {
              else level = Math.min(Math.floor(Math.random() * tableMax) + 1, tableMax);
         }
 
-        // Check if already added to this roll set
         if (!newEnchants.find(e => e.id === selected.id)) {
             newEnchants.push({ id: selected.id, name: selected.name, level: level, type: (selected as any).type || 'normal' });
         }
@@ -1485,12 +1610,37 @@ function handleEnchant() {
 
 function updateEnchantUI() {
     if (!dom.enchantmentContainer) return;
-    dom.enchantmentContainer.classList.toggle('hidden', gameState.enchantTableTier === 0);
-    if (gameState.enchantTableTier === 0) return;
+    
+    // Always show container now, but content varies
+    dom.enchantmentContainer.classList.toggle('hidden', !gameState.isCubePurchased); 
+    if (!gameState.isCubePurchased) return;
 
-    const tableData = TABLE_DATA[gameState.enchantTableTier];
-    dom.enchantTableTierText.textContent = tableData.name;
-    dom.enchantCostText.textContent = `${tableData.stoneCost} 마법석`;
+    const tier = gameState.enchantTableTier;
+    
+    if (tier === 0) {
+        dom.enchantTableTierText.textContent = "마법 부여대 없음";
+        if(dom.upgradeTableButton) {
+            const nextCost = TABLE_UPGRADE_COSTS[0];
+            dom.upgradeTableButton.textContent = `1티어 구매 (${nextCost.cash.toLocaleString()} KRW)`;
+            dom.upgradeTableButton.classList.remove('hidden');
+        }
+        if(dom.enchantActionPanel) dom.enchantActionPanel.classList.add('hidden');
+    } else {
+        const tableData = TABLE_DATA[tier];
+        dom.enchantTableTierText.textContent = tableData.name;
+        
+        // Upgrade Button logic
+        if (tier < 5 && dom.upgradeTableButton) {
+             const nextCost = TABLE_UPGRADE_COSTS[tier]; // Index tier corresponds to next tier cost
+             dom.upgradeTableButton.textContent = `다음 티어 강화 (${nextCost.cash.toLocaleString()} KRW + ${nextCost.stones} MS)`;
+             dom.upgradeTableButton.classList.remove('hidden');
+        } else {
+            dom.upgradeTableButton.classList.add('hidden');
+        }
+
+        if(dom.enchantActionPanel) dom.enchantActionPanel.classList.remove('hidden');
+        dom.enchantCostText.textContent = `${tableData.stoneCost} 마법석`;
+    }
     
     dom.activeEnchantsList.innerHTML = '';
     if (gameState.activeEnchants.length === 0) {
@@ -1543,11 +1693,25 @@ function restoreUIState() {
     dom.incomeSourceUpgrades.classList.toggle('hidden', !state.isCubePurchased);
     dom.timeContainer.classList.toggle('hidden', !state.shopItems.digitalClock);
     dom.weatherContainer.classList.toggle('hidden', !state.shopItems.digitalClock);
-    if (dom.upgradeLunarSection) dom.upgradeLunarSection.classList.toggle('hidden', !state.isCubePurchased || state.isLunarUpgraded);
+    
+    if (dom.upgradeLunarSection) {
+        dom.upgradeLunarSection.classList.toggle('hidden', !state.isCubePurchased);
+        // Lunar is buy once now
+        dom.upgradeLunarButton.textContent = state.lunarMiningLevel > 0 ? '구매 완료' : '200 LUNAR';
+        if (state.lunarMiningLevel > 0) dom.upgradeLunarButton.classList.add('btn-disabled');
+        else dom.upgradeLunarButton.classList.remove('btn-disabled');
+    }
+
     if (dom.upgradeEnergySection) dom.upgradeEnergySection.classList.toggle('hidden', !state.isLunarUpgraded || state.isEnergyUpgraded);
     if (dom.upgradePrismSection) dom.upgradePrismSection.classList.toggle('hidden', !state.isEnergyUpgraded || state.isPrismUpgraded);
-    if (dom.upgradeAuroraSection) dom.upgradeAuroraSection.classList.toggle('hidden', !state.isPrismUpgraded || state.isAuroraUpgraded);
-    updateCubeAppearance(); updateWeatherAlmanacUI(); updateUI(); updateEnchantUI();
+    if (dom.upgradeDigitalSection) dom.upgradeDigitalSection.classList.toggle('hidden', !state.isPrismUpgraded || state.isDigitalUpgraded);
+    
+    if (dom.upgradeDigitalButton) dom.upgradeDigitalButton.textContent = '100 DIGITAL'; // Updated Text
+    
+    if (dom.upgradeAuroraSection) dom.upgradeAuroraSection.classList.toggle('hidden', !state.isDigitalUpgraded || state.isAuroraUpgraded);
+    if (dom.upgradeAuroraButton) dom.upgradeAuroraButton.textContent = '100 AURORA'; // Updated Text
+    
+    updateCubeAppearance(); updateWeatherAlmanacUI(); updateMagicAlmanacUI(); updateUI(); updateEnchantUI();
 }
 async function resetUserData() {
     if (confirm('정말로 모든 게임 데이터를 삭제하고 처음부터 다시 시작하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
@@ -1563,6 +1727,20 @@ async function handleCodeSubmit() {
 
     if (code === 'RESET') {
         resetUserData();
+        return;
+    }
+    
+    if (code === 'MAGIC') {
+        if (gameState.usedCodes && gameState.usedCodes.includes(code)) {
+            showNotification('이미 사용한 코드입니다.', true);
+            return;
+        }
+        gameState.userMagicStone = (gameState.userMagicStone || 0) + 10;
+        if (!gameState.usedCodes) gameState.usedCodes = [];
+        gameState.usedCodes.push(code);
+        showNotification('마법석 10개를 획득했습니다!', false);
+        codeInput.value = '';
+        await saveGameState();
         return;
     }
 
@@ -1615,35 +1793,35 @@ async function loadGameState() {
     const snapshot = await db.ref(`users/${userUID}`).get();
     if (snapshot.exists()) {
         const loadedData = snapshot.val();
+        
+        // Data Version Check - No auto reset, just merge if version differs to be safe
+        if (loadedData.version !== DATA_VERSION) {
+             // We update the version in state but try to keep data.
+             // Only strict structure changes might need manual migration logic here.
+             console.log("Data version mismatch, migrating...");
+             gameState = migrateAndMergeState(loadedData);
+             gameState.version = DATA_VERSION;
+             await saveGameState();
+             return true;
+        }
+
         gameState = migrateAndMergeState(loadedData);
 
-        // Calculate offline income
         const now = Date.now();
         const offlineTimeMs = now - (gameState.lastOnlineTimestamp || now);
         const offlineSeconds = Math.floor(offlineTimeMs / 1000);
         
-        if (offlineSeconds > 10) { // Only calculate if offline for more than 10 seconds
-            // 1. Passive income
+        if (offlineSeconds > 10) { 
             let baseProduction = 0;
             if(gameState.isCubePurchased) { 
                 baseProduction = 100; 
                 if(gameState.isAuroraUpgraded) baseProduction = 1000;
+                else if(gameState.isDigitalUpgraded) baseProduction = 700;
                 else if(gameState.isPrismUpgraded) baseProduction = 400; 
                 else if(gameState.isEnergyUpgraded) baseProduction = 200; 
             }
-            // No lunar cash bonus offline anymore
-            let offlineKRW = baseProduction * offlineSeconds;
             
-            // Computer boost for offline time
-            // FIX: Safety access
-            const safeTier = Math.max(0, Math.min(gameState.computerTier, COMPUTER_DATA.length - 1));
-            const compData = COMPUTER_DATA[safeTier] || COMPUTER_DATA[0];
-
-             if (gameState.computerTier > 0) {
-                const boostMultiplier = 1 + (compData.effect);
-                offlineKRW *= boostMultiplier;
-            }
-
+            let offlineKRW = baseProduction * offlineSeconds;
             gameState.userCash += offlineKRW;
             showNotification(`오프라인 보상: ${Math.floor(offlineKRW).toLocaleString()} KRW를 획득했습니다!`, false);
         }
@@ -1658,7 +1836,7 @@ function handleSendMessage() {
     const text = input.value.trim();
 
     if (text === '/dev.mod') {
-        dom.devPanel.classList.toggle('hidden');
+        dom.devPanel.classList.remove('hidden');
         input.value = '';
         return;
     }
@@ -1785,6 +1963,168 @@ async function onLoginSuccess(user: any) {
     window.autosaveInterval = setInterval(saveGameState, 30000);
 }
 
+function handleAnnouncementUpdate(announcement: { text: string, duration: number, timestamp: number } | null) {
+    const banner = document.getElementById('global-announcement');
+    const textSpan = document.getElementById('announcement-text');
+    const timerSpan = document.getElementById('announcement-timer');
+    
+    if (announcementInterval) clearInterval(announcementInterval);
+
+    if (announcement && announcement.text) {
+        const now = Date.now();
+        const endTime = announcement.timestamp + (announcement.duration * 1000);
+        
+        if (now < endTime) {
+            if (banner && textSpan) {
+                textSpan.textContent = announcement.text;
+                banner.classList.remove('hidden');
+            }
+
+            const updateTimer = () => {
+                const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+                if (timerSpan) timerSpan.textContent = `${remaining}s`;
+                if (remaining <= 0) {
+                    banner?.classList.add('hidden');
+                    clearInterval(announcementInterval);
+                }
+            };
+            updateTimer();
+            announcementInterval = setInterval(updateTimer, 1000);
+        } else {
+            banner?.classList.add('hidden');
+        }
+    } else {
+        banner?.classList.add('hidden');
+    }
+}
+
+// --- Dev Panel Logic ---
+function initDevPanel() {
+    if (!dom.devWeatherSelect) return;
+    
+    // Populate Weather Select
+    dom.devWeatherSelect.innerHTML = '';
+    Object.keys(WEATHER_DATA).forEach(w => {
+        const option = document.createElement('option');
+        option.value = w;
+        option.textContent = w;
+        dom.devWeatherSelect.appendChild(option);
+    });
+
+    // Close Button
+    dom.closeDevPanel?.addEventListener('click', () => {
+        dom.devPanel.classList.add('hidden');
+    });
+
+    // Announcement
+    document.getElementById('dev-post-announcement-btn')?.addEventListener('click', () => {
+        const text = (document.getElementById('dev-announcement-text') as HTMLInputElement).value;
+        const duration = parseInt((document.getElementById('dev-announcement-duration') as HTMLInputElement).value) || 15;
+        if (text) {
+            db.ref('globalState/announcement').set({
+                text: text,
+                duration: duration,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+            alert('공지가 게시되었습니다.');
+        }
+    });
+
+    document.getElementById('dev-clear-announcement-btn')?.addEventListener('click', () => {
+        db.ref('globalState/announcement').remove();
+        alert('공지가 삭제되었습니다.');
+    });
+
+    // Speed
+    document.getElementById('dev-set-speed-btn')?.addEventListener('click', () => {
+        const speed = parseInt((document.getElementById('dev-speed-input') as HTMLInputElement).value);
+        if (speed >= 1 && speed <= 10) {
+            db.ref('globalState/speed').set(speed);
+            alert(`게임 속도가 ${speed}배로 설정되었습니다.`);
+        }
+    });
+
+    // Chat Clear
+    document.getElementById('dev-clear-chat-btn')?.addEventListener('click', () => {
+        if(confirm('정말 채팅 기록을 모두 삭제하시겠습니까?')) {
+            db.ref('chat').remove();
+            alert('채팅 기록이 삭제되었습니다.');
+        }
+    });
+
+    // Weather
+    document.getElementById('dev-set-weather-btn')?.addEventListener('click', () => {
+        const weather = (document.getElementById('dev-weather-select') as HTMLSelectElement).value;
+        db.ref('globalState/weather').set(weather);
+        alert(`날씨가 ${weather}로 고정되었습니다.`);
+    });
+
+    document.getElementById('dev-clear-weather-btn')?.addEventListener('click', () => {
+        db.ref('globalState/weather').remove();
+        alert('날씨 고정이 해제되었습니다.');
+    });
+
+    // Prices
+    document.getElementById('dev-set-prices-btn')?.addEventListener('click', () => {
+        const prices: any = {};
+        const ids = ['cube', 'lunar', 'energy', 'prism', 'digital', 'aurora'];
+        let hasValue = false;
+        ids.forEach(id => {
+            const val = (document.getElementById(`dev-price-${id}`) as HTMLInputElement).value;
+            if (val) {
+                prices[id.charAt(0).toUpperCase() + id.slice(1)] = parseInt(val);
+                hasValue = true;
+            }
+        });
+
+        if (hasValue) {
+            db.ref('globalState/prices').set(prices);
+            alert('코인 가격이 고정되었습니다.');
+        }
+    });
+
+    document.getElementById('dev-clear-prices-btn')?.addEventListener('click', () => {
+        db.ref('globalState/prices').remove();
+        alert('코인 가격 고정이 해제되었습니다.');
+    });
+
+    // Promo Code
+    document.getElementById('dev-create-code-btn')?.addEventListener('click', () => {
+        const code = (document.getElementById('dev-code-id') as HTMLInputElement).value.toUpperCase();
+        const type = (document.getElementById('dev-code-reward-type') as HTMLSelectElement).value;
+        const amount = parseInt((document.getElementById('dev-code-reward-amount') as HTMLInputElement).value);
+
+        if (code && amount > 0) {
+            db.ref(`promoCodes/${code}`).set({
+                rewardType: type,
+                amount: amount
+            });
+            alert(`코드 ${code}가 생성되었습니다.`);
+        }
+    });
+    
+    // User Reset
+    document.getElementById('dev-reset-user-btn')?.addEventListener('click', () => {
+        const uid = (document.getElementById('dev-reset-uid') as HTMLInputElement).value.trim();
+        if(uid) {
+            if(confirm(`정말 유저 ${uid}의 데이터를 초기화하시겠습니까?`)) {
+                db.ref(`users/${uid}`).remove()
+                .then(() => alert('데이터 삭제 완료'))
+                .catch((e: any) => alert('오류: ' + e.message));
+            }
+        }
+    });
+}
+
+function populateSettingsUI() {
+    if(!dom.devPanel) return; // Just a check
+    const durationInput = document.getElementById('setting-notification-duration') as HTMLInputElement;
+    const showToggle = document.getElementById('setting-show-notifications') as HTMLInputElement;
+    
+    if(durationInput) durationInput.value = (gameState.settings.notificationDuration / 1000).toString();
+    if(showToggle) showToggle.checked = gameState.settings.showNotifications;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
@@ -1792,6 +2132,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     const showLoginLink = document.getElementById('show-login-link');
     const loginView = document.getElementById('login-view');
     const registerView = document.getElementById('register-view');
+    const closeAnnouncement = document.getElementById('close-announcement');
 
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (registerForm) registerForm.addEventListener
+    if (registerForm) registerForm.addEventListener('submit', handleRegister);
+    
+    if (showRegisterLink && loginView && registerView) {
+        showRegisterLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginView.classList.add('hidden');
+            registerView.classList.remove('hidden');
+        });
+    }
+
+    if (showLoginLink && loginView && registerView) {
+        showLoginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            registerView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+        });
+    }
+    
+    if (closeAnnouncement) {
+        closeAnnouncement.addEventListener('click', () => {
+            document.getElementById('global-announcement')?.classList.add('hidden');
+        });
+    }
+
+    auth.onAuthStateChanged((user: any) => {
+        if (user) {
+            onLoginSuccess(user);
+        } else {
+            document.getElementById('auth-container')?.classList.remove('hidden');
+            document.getElementById('main-content')?.classList.add('hidden');
+            stopGame();
+        }
+    });
+});

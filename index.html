@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -38,7 +39,6 @@
             font-weight: 800;
         }
     </style>
-<link rel="stylesheet" href="/index.css">
 <script type="importmap">
 {
   "imports": {
@@ -52,7 +52,7 @@
 </head>
 <body class="bg-gray-900 text-white">
     <!-- Global Announcement Banner -->
-    <div id="global-announcement" class="hidden bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-3 font-bold flex justify-between items-center shadow-lg text-sm relative">
+    <div id="global-announcement" class="hidden bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-3 font-bold flex justify-between items-center shadow-lg text-sm relative z-50">
         <div class="flex items-center gap-3">
             <span class="text-2xl animate-pulse">📢</span>
             <span id="announcement-text"></span>
@@ -118,9 +118,9 @@
         </div>
     </div>
     
-    <!-- v2 Update Banner -->
-    <div id="update-banner" class="hidden bg-yellow-500 text-black text-center p-2 font-bold">
-        v2 업데이트가 <span id="countdown-timer"></span> 후에 진행됩니다!
+    <!-- Updated Banner -->
+    <div id="update-banner" class="bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-center p-2 font-bold animate-pulse">
+        USE CODE MAGIC! <span class="text-xs font-normal opacity-80">(마법석 10개 지급)</span>
     </div>
     
     <!-- Dev Panel (Modal) -->
@@ -222,7 +222,7 @@
         <header class="w-full bg-gray-800 p-3 shadow-lg z-10">
             <div class="flex justify-between items-center max-w-screen-2xl mx-auto">
                 <!-- 좌측: 시간 & 날씨 & 계절 -->
-                <div class="flex items-center gap-4 text-sm">
+                <div class="flex items-center gap-4 text-sm min-w-[200px] mr-4">
                     <div id="time-container" class="hidden flex items-baseline gap-2">
                         <span class="font-semibold text-gray-400">시간:</span>
                         <span id="game-time" class="font-bold text-white text-base">09:00 (☀️)</span>
@@ -233,18 +233,21 @@
                     </div>
                     <div id="weather-container" class="hidden flex items-baseline gap-2">
                          <span class="font-semibold text-gray-400">날씨:</span>
-                         <span id="weather-display" class="font-bold text-white text-base">맑음 ☀️</span>
+                         <div class="flex items-center gap-1">
+                            <span id="weather-display" class="font-bold text-white text-base">맑음 ☀️</span>
+                            <span id="weather-timer" class="text-xs text-gray-400 font-mono bg-gray-900 px-1 rounded">30s</span>
+                         </div>
                     </div>
                 </div>
 
                 <!-- 중앙: 시세 정보 -->
                 <div class="flex-grow flex justify-center items-center gap-x-4 overflow-x-auto custom-scrollbar pb-1">
-                    <div><h2 class="text-[10px] font-semibold text-blue-300 uppercase">CUBE</h2><div class="flex items-baseline gap-1"><div id="current-cube-price" class="text-sm font-bold text-white">-</div><div id="cube-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
-                    <div><h2 class="text-[10px] font-semibold text-purple-300 uppercase">LUNAR</h2><div class="flex items-baseline gap-1"><div id="current-lunar-price" class="text-sm font-bold text-white">-</div><div id="lunar-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
-                    <div><h2 class="text-[10px] font-semibold text-yellow-300 uppercase">ENERGY</h2><div class="flex items-baseline gap-1"><div id="current-energy-price" class="text-sm font-bold text-white">-</div><div id="energy-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
-                    <div><h2 class="text-[10px] font-semibold text-pink-300 uppercase">PRISM</h2><div class="flex items-baseline gap-1"><div id="current-prism-price" class="text-sm font-bold text-white">-</div><div id="prism-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
-                    <div><h2 class="text-[10px] font-semibold text-cyan-300 uppercase">DIGITAL</h2><div class="flex items-baseline gap-1"><div id="current-digital-price" class="text-sm font-bold text-white">-</div><div id="digital-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
-                    <div><h2 class="text-[10px] font-semibold text-green-300 uppercase">AURORA</h2><div class="flex items-baseline gap-1"><div id="current-aurora-price" class="text-sm font-bold text-white">-</div><div id="aurora-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-cube"><h2 class="text-[10px] font-semibold text-blue-300 uppercase">CUBE</h2><div class="flex items-baseline gap-1"><div id="current-cube-price" class="text-sm font-bold text-white">-</div><div id="cube-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-lunar"><h2 class="text-[10px] font-semibold text-purple-300 uppercase">LUNAR</h2><div class="flex items-baseline gap-1"><div id="current-lunar-price" class="text-sm font-bold text-white">-</div><div id="lunar-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-energy"><h2 class="text-[10px] font-semibold text-yellow-300 uppercase">ENERGY</h2><div class="flex items-baseline gap-1"><div id="current-energy-price" class="text-sm font-bold text-white">-</div><div id="energy-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-prism"><h2 class="text-[10px] font-semibold text-pink-300 uppercase">PRISM</h2><div class="flex items-baseline gap-1"><div id="current-prism-price" class="text-sm font-bold text-white">-</div><div id="prism-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-digital"><h2 class="text-[10px] font-semibold text-cyan-300 uppercase">DIGITAL</h2><div class="flex items-baseline gap-1"><div id="current-digital-price" class="text-sm font-bold text-white">-</div><div id="digital-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
+                    <div id="ticker-aurora" class="hidden"><h2 class="text-[10px] font-semibold text-green-300 uppercase">AURORA</h2><div class="flex items-baseline gap-1"><div id="current-aurora-price" class="text-sm font-bold text-white">-</div><div id="aurora-price-change" class="text-[10px] font-medium text-gray-300">-</div></div></div>
                 </div>
 
                 <!-- 우측: 게임 타이틀 & 로그아웃 -->
@@ -272,7 +275,7 @@
                         <div class="relative w-full bg-gray-900 rounded-lg mb-4 overflow-hidden h-80">
                             <!-- 3D 렌더링 영역 -->
                             <div id="cube-container" class="absolute inset-0"></div>
-                            <!-- 구매 오버레이 (cube-container 바깥으로 이동하여 JS로 인한 삭제 방지) -->
+                            <!-- 구매 오버레이 -->
                             <div id="cube-purchase-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/80 p-4">
                                 <div class="bg-gray-600 p-6 rounded-lg text-center shadow-xl">
                                     <h3 class="text-xl font-bold mb-2">패시브 수입원 활성화</h3>
@@ -293,26 +296,35 @@
                                         <div id="exceptional-timer" class="text-lg font-bold text-white">00:00 남음</div>
                                      </div>
                                 </div>
+                                <div id="mining-prob-stats" class="mt-2 pt-2 border-t border-gray-500 flex justify-between text-xs text-gray-300">
+                                    <span>🔮 마법석: <span id="prob-magic-stone" class="text-white font-bold">0%</span></span>
+                                    <span>💾 결정: <span id="prob-data-crystal" class="text-white font-bold">0%</span></span>
+                                </div>
                             </div>
                             <div class="grid grid-cols-1 gap-4">
                                 <div id="upgrade-lunar-section" class="bg-gray-600 p-4 rounded-lg shadow-xl text-center hidden">
-                                    <h4 class="text-lg font-bold text-purple-300">LUNAR 강화 (채굴)</h4>
-                                    <p class="text-sm text-gray-400 my-2">매 20분마다 확률적으로 마법석 채굴 (밤/별똥별/오로라 시 확률 증가)</p>
+                                    <h4 class="text-lg font-bold text-purple-300">LUNAR 강화</h4>
+                                    <p class="text-xs text-gray-400 my-2">마법석 채굴 잠금 해제 (10%)</p>
                                     <button id="upgrade-lunar-button" class="w-full bg-purple-600 hover:bg-purple-700 font-bold py-2 px-4 rounded-lg text-sm">200 LUNAR</button>
                                 </div>
                                 <div id="upgrade-energy-section" class="bg-gray-600 p-4 rounded-lg shadow-xl text-center hidden">
                                     <h4 class="text-lg font-bold text-yellow-300">ENERGY 강화</h4>
-                                    <p class="text-sm text-gray-400 my-2">기본 생산량을 200으로 증가</p>
+                                    <p class="text-xs text-gray-400 my-2">기본 생산량 200 + 마법석 확률 2배</p>
                                     <button id="upgrade-energy-button" class="w-full bg-yellow-600 hover:bg-yellow-700 font-bold py-2 px-4 rounded-lg text-sm">100 ENERGY</button>
                                 </div>
                                 <div id="upgrade-prism-section" class="bg-gray-600 p-4 rounded-lg shadow-xl text-center hidden">
                                     <h4 class="text-lg font-bold text-pink-300">PRISM 강화</h4>
-                                    <p class="text-sm text-gray-400 my-2">기본 생산량을 400으로 증가</p>
+                                    <p class="text-xs text-gray-400 my-2">기본 생산량 400 + 마법석 확률 2배</p>
                                     <button id="upgrade-prism-button" class="w-full bg-pink-600 hover:bg-pink-700 font-bold py-2 px-4 rounded-lg text-sm">100 PRISM</button>
+                                </div>
+                                <div id="upgrade-digital-section" class="bg-gray-600 p-4 rounded-lg shadow-xl text-center hidden">
+                                    <h4 class="text-lg font-bold text-cyan-300">DIGITAL 강화</h4>
+                                    <p class="text-xs text-gray-400 my-2">기본 생산량 700 + 데이터 결정 채굴</p>
+                                    <button id="upgrade-digital-button" class="w-full bg-cyan-600 hover:bg-cyan-700 font-bold py-2 px-4 rounded-lg text-sm">100 DIGITAL</button>
                                 </div>
                                 <div id="upgrade-aurora-section" class="bg-gray-600 p-4 rounded-lg shadow-xl text-center hidden">
                                     <h4 class="text-lg font-bold text-green-300">AURORA 강화 (최종)</h4>
-                                    <p class="text-sm text-gray-400 my-2">기본 생산량을 1000으로 증가</p>
+                                    <p class="text-xs text-gray-400 my-2">기본 생산량 1000으로 증가</p>
                                     <button id="upgrade-aurora-button" class="w-full bg-green-600 hover:bg-green-700 font-bold py-2 px-4 rounded-lg text-sm">100 AURORA</button>
                                 </div>
                             </div>
@@ -356,7 +368,7 @@
                                 <div id="shop-items" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
                             </div>
                             <div id="shop-content-totems" class="hidden">
-                                 <h4 class="text-md font-semibold text-gray-300 mb-2">날씨 토템</h4>
+                                 <h4 class="text-md font-semibold text-gray-300 mb-2">날씨 토템 <span id="totem-timer-display" class="text-sm font-normal text-gray-400">(갱신 대기중...)</span></h4>
                                 <div id="totem-items" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
                             </div>
                         </div>
@@ -366,13 +378,18 @@
                 <!-- Enchantment Section -->
                 <div id="enchantment-container" class="bg-gray-700 rounded-lg shadow-lg hidden"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-enchant"><h3 class="text-lg font-semibold text-white text-purple-300">🔮 마법 부여</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-enchant-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div>
                     <div id="content-enchant" class="px-4 pb-4">
-                        <div class="bg-gray-800 p-4 rounded-lg mb-4 text-center">
-                            <h4 id="enchant-table-tier-text" class="text-xl font-bold text-purple-400 mb-2">마법 부여대 (Tier 0)</h4>
-                            <div class="flex justify-center items-center gap-2 mb-4">
-                                <span class="text-sm text-gray-300">비용: <span id="enchant-cost-text" class="text-indigo-400 font-bold">-</span></span>
+                        <div class="flex gap-4 mb-4">
+                            <div class="flex-1 bg-gray-800 p-4 rounded-lg text-center">
+                                <h4 id="enchant-table-tier-text" class="text-xl font-bold text-purple-400 mb-2">마법 부여대 없음</h4>
+                                <button id="upgrade-table-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-2 rounded-lg text-sm mt-2">구매/강화</button>
                             </div>
-                            <button id="do-enchant-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg transform transition hover:scale-105">마법 부여 하기</button>
+                            <div id="enchant-action-panel" class="flex-1 bg-gray-800 p-4 rounded-lg text-center hidden">
+                                <h4 class="text-sm font-bold text-gray-300 mb-2">마법 부여 비용</h4>
+                                <p id="enchant-cost-text" class="text-indigo-400 font-bold text-lg mb-2">-</p>
+                                <button id="do-enchant-button" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-2 rounded-lg text-sm">부여하기</button>
+                            </div>
                         </div>
+                        
                         <h4 class="text-sm font-semibold text-gray-300 mb-2">현재 적용된 마법</h4>
                         <div id="active-enchants-list" class="grid grid-cols-1 gap-2">
                             <!-- Enchants will be populated here -->
@@ -380,9 +397,13 @@
                     </div>
                 </div>
 
-                <div class="bg-gray-700 rounded-lg shadow-lg"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-computer"><h3 class="text-lg font-semibold text-white">컴퓨터 (수익률 부스트)</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-computer-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-computer" class="px-4 pb-4"><div id="computer-info" class="bg-gray-600 p-4 rounded-lg text-center"><h4 id="computer-tier-text" class="text-lg font-bold">컴퓨터 없음</h4><p id="computer-stats-text" class="text-sm text-gray-300 mt-2"></p><button id="computer-upgrade-button" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 font-bold py-2 px-4 rounded-lg"></button></div></div></div>
+                <div class="bg-gray-700 rounded-lg shadow-lg"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-computer"><h3 class="text-lg font-semibold text-white">컴퓨터 (확률 부스트)</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-computer-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-computer" class="px-4 pb-4"><div id="computer-info" class="bg-gray-600 p-4 rounded-lg text-center"><h4 id="computer-tier-text" class="text-lg font-bold">컴퓨터 없음</h4><p id="computer-stats-text" class="text-sm text-gray-300 mt-2"></p><button id="computer-upgrade-button" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 font-bold py-2 px-4 rounded-lg"></button></div></div></div>
 
                 <div class="bg-gray-700 rounded-lg shadow-lg" id="weather-almanac-section"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-almanac"><h3 class="text-lg font-semibold text-white">날씨 도감</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-almanac-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-almanac" class="px-4 pb-4"><div id="weather-almanac-content" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div></div></div>
+                
+                <!-- Magic Almanac Section -->
+                <div class="bg-gray-700 rounded-lg shadow-lg hidden" id="magic-almanac-section"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-magic-almanac"><h3 class="text-lg font-semibold text-purple-300">마법 도감</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-magic-almanac-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-magic-almanac" class="px-4 pb-4"><div id="magic-almanac-content" class="grid grid-cols-1 gap-2"></div></div></div>
+
                 <div class="bg-gray-700 rounded-lg shadow-lg"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-trophy"><h3 class="text-lg font-semibold text-white">트로피</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-trophy-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-trophy" class="px-4 pb-4"><div id="trophy-list" class="space-y-2"></div></div></div>
                 
                 <div class="bg-gray-700 rounded-lg shadow-lg"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-code"><h3 class="text-lg font-semibold text-white">코드 입력</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-code-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div><div id="content-code" class="px-4 pb-4"><div class="flex gap-2"><input type="text" id="code-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-600 uppercase" placeholder="프로모션 코드"><button id="code-submit-button" class="bg-green-600 hover:bg-green-700 font-bold px-4 rounded">입력</button></div><p class="text-xs text-gray-500 mt-2">'RESET'을 입력하여 데이터를 초기화할 수 있습니다.</p></div></div>
@@ -444,6 +465,5 @@
 
     <!-- Main Game Script -->
     <script type="module" src="index.tsx"></script>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>
