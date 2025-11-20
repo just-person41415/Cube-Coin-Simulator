@@ -1,0 +1,5 @@
+{
+  "name": "Cube Coin Simulator",
+  "description": "A strategic coin simulation game featuring real-time market dynamics, 3D visualization, and resource management.",
+  "requestFramePermissions": []
+}
