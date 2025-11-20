@@ -119,7 +119,7 @@ const COIN_DATA: {[key: string]: any} = {
         minPrice: 40000,
         maxPrice: 200000,
         interval: 3000,
-        upChance: 0.49, // -2%
+        upChance: 0.47, // -4% total (was 0.49)
         fluctuation: {
             day: { small: 0.6, medium: 0.38, large: 0.02 },
             night: { small: 0.6, medium: 0.38, large: 0.02 }
@@ -131,7 +131,7 @@ const COIN_DATA: {[key: string]: any} = {
         minPrice: 80000,
         maxPrice: 500000,
         interval: 3000,
-        upChance: 0.52, // -2%
+        upChance: 0.50, // -4% total (was 0.52)
         fluctuation: {
             day: { small: 0.98, medium: 0, large: 0.02 },
             night: { small: 0.98, medium: 0, large: 0.02 }
