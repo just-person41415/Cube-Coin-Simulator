@@ -416,7 +416,7 @@ function showNotification(message: string, isError = true) {
 }
 
 function updateUI() {
-    const state = gameState; if (!dom.userCash) return;
+    const state: any = gameState; if (!dom.userCash) return;
     const resourceMap = {
         userCash: state.userCash, userCubes: state.userCubes, userLunar: state.userLunar, userEnergy: state.userEnergy, userPrisms: state.userPrisms,
         userDigital: state.userDigital, userAurora: state.userAurora, userMagicStone: state.userMagicStone, userDataCrystal: state.userDataCrystal
@@ -430,13 +430,13 @@ function updateUI() {
     }
 
     const updatePriceDisplay = (priceEl: HTMLElement, changeEl: HTMLElement, current: number, last: number) => { if (!priceEl || !changeEl) return; priceEl.textContent = `${current.toLocaleString('ko-KR')} KRW`; const change = current - last; const pct = last > 0 ? ((change / last) * 100).toFixed(2) : '0.00'; if (change > 0) changeEl.innerHTML = `<span class="text-green-500">▲ +${pct}%</span>`; else if (change < 0) changeEl.innerHTML = `<span class="text-red-500">▼ ${pct}%</span>`; else changeEl.innerHTML = `0.00%`; };
-    // FIX: Argument of type 'unknown' is not assignable to parameter of type 'number'. Removed redundant `as any` cast.
-    updatePriceDisplay(dom.currentCubePrice, dom.cubePriceChange, Number((state as any).currentPrice), Number((state as any).lastPrice));
-    updatePriceDisplay(dom.currentLunarPrice, dom.lunarPriceChange, Number((state as any).currentLunarPrice), Number((state as any).lastLunarPrice));
-    updatePriceDisplay(dom.currentEnergyPrice, dom.energyPriceChange, Number((state as any).currentEnergyPrice), Number((state as any).lastEnergyPrice));
-    updatePriceDisplay(dom.currentPrismPrice, dom.prismPriceChange, Number((state as any).currentPrismPrice), Number((state as any).lastPrismPrice));
-    updatePriceDisplay(dom.currentDigitalPrice, dom.digitalPriceChange, Number((state as any).currentDigitalPrice), Number((state as any).lastDigitalPrice));
-    updatePriceDisplay(dom.currentAuroraPrice, dom.auroraPriceChange, Number((state as any).currentAuroraPrice), Number((state as any).lastAuroraPrice));
+    
+    updatePriceDisplay(dom.currentCubePrice, dom.cubePriceChange, Number(state.currentPrice), Number(state.lastPrice));
+    updatePriceDisplay(dom.currentLunarPrice, dom.lunarPriceChange, Number(state.currentLunarPrice), Number(state.lastLunarPrice));
+    updatePriceDisplay(dom.currentEnergyPrice, dom.energyPriceChange, Number(state.currentEnergyPrice), Number(state.lastEnergyPrice));
+    updatePriceDisplay(dom.currentPrismPrice, dom.prismPriceChange, Number(state.currentPrismPrice), Number(state.lastPrismPrice));
+    updatePriceDisplay(dom.currentDigitalPrice, dom.digitalPriceChange, Number(state.currentDigitalPrice), Number(state.lastDigitalPrice));
+    updatePriceDisplay(dom.currentAuroraPrice, dom.auroraPriceChange, Number(state.currentAuroraPrice), Number(state.lastAuroraPrice));
 
     if (dom.weatherDisplay) dom.weatherDisplay.textContent = `${state.weather} ${WEATHER_DATA[state.weather].icon}`;
     if (dom.seasonDisplay) dom.seasonDisplay.textContent = `${state.season} ${SEASON_EMOJI_MAP[state.season as keyof typeof SEASON_EMOJI_MAP]} ${state.dayInSeason}일차`;
@@ -1794,207 +1794,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     const registerView = document.getElementById('register-view');
 
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (registerForm) registerForm.addEventListener('submit', handleRegister);
-    
-    if (showRegisterLink && loginView && registerView) {
-        showRegisterLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            loginView.classList.add('hidden');
-            registerView.classList.remove('hidden');
-        });
-    }
-    if (showLoginLink && loginView && registerView) {
-        showLoginLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            registerView.classList.add('hidden');
-            loginView.classList.remove('hidden');
-        });
-    }
-
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            await onLoginSuccess(user);
-        } else {
-            stopGame();
-            renderer = null; // Ensure 3D animation stops on logout
-            userUID = null;
-            userNickname = null;
-            document.getElementById('auth-container')?.classList.remove('hidden');
-            document.getElementById('main-content')?.classList.add('hidden');
-        }
-    });
-
-    ['assets', 'inventory', 'trade', 'history', 'computer', 'trophy', 'almanac', 'shop', 'code', 'settings', 'enchant'].forEach(s => {
-        const toggle = document.getElementById(`toggle-${s}`);
-        if (toggle) {
-            toggle.addEventListener('click', () => {
-                document.getElementById(`content-${s}`)?.classList.toggle('hidden');
-                document.getElementById(`toggle-${s}-icon`)?.classList.toggle('rotate-180');
-            });
-        }
-    });
-});
-
-
-function getDiscountedCost(originalCost: number): number {
-    // Skill removed, but keeping helper for cleaner logic if we add skills back
-    return originalCost;
-}
-
-
-function initDevPanel() {
-    if (dom.closeDevPanel) dom.closeDevPanel.addEventListener('click', () => dom.devPanel.classList.add('hidden'));
-
-    if (dom.devWeatherSelect) {
-        dom.devWeatherSelect.innerHTML = Object.keys(WEATHER_DATA).map(w => `<option value="${w}">${w}</option>`).join('');
-    }
-
-    document.getElementById('dev-post-announcement-btn')?.addEventListener('click', () => {
-        const text = (document.getElementById('dev-announcement-text') as HTMLInputElement).value.trim();
-        const duration = parseInt((document.getElementById('dev-announcement-duration') as HTMLInputElement).value, 10);
-        if (text && !isNaN(duration) && duration > 0) {
-            const expiresAt = Date.now() + duration * 1000;
-            db.ref('globalState/announcement').set({ text, expiresAt });
-            showNotification('공지가 게시되었습니다.', false);
-        } else {
-            showNotification('공지 내용과 시간을 올바르게 입력해주세요.', true);
-        }
-    });
-    document.getElementById('dev-clear-announcement-btn')?.addEventListener('click', () => {
-        db.ref('globalState/announcement').set(null);
-        showNotification('공지가 삭제되었습니다.', false);
-    });
-
-    document.getElementById('dev-set-speed-btn')?.addEventListener('click', () => {
-        const speed = parseInt((document.getElementById('dev-speed-input') as HTMLInputElement).value, 10);
-        if (speed >= 1 && speed <= 10) {
-            db.ref('globalState/speed').set(speed);
-            showNotification(`게임 속도를 ${speed}배로 설정했습니다.`, false);
-        } else {
-            showNotification('속도는 1-10 사이로 입력해주세요.', true);
-        }
-    });
-
-    document.getElementById('dev-clear-chat-btn')?.addEventListener('click', () => {
-        if (confirm('정말로 모든 채팅 기록을 삭제하시겠습니까?')) {
-            db.ref('chat').remove();
-            showNotification('채팅 기록이 삭제되었습니다.', false);
-        }
-    });
-
-    document.getElementById('dev-create-code-btn')?.addEventListener('click', () => {
-        const codeId = (document.getElementById('dev-code-id') as HTMLInputElement).value.toUpperCase().trim();
-        const rewardType = (document.getElementById('dev-code-reward-type') as HTMLSelectElement).value;
-        const amount = parseInt((document.getElementById('dev-code-reward-amount') as HTMLInputElement).value, 10);
-        if (codeId && rewardType && amount > 0) {
-            db.ref(`promoCodes/${codeId}`).set({ rewardType, amount });
-            showNotification(`프로모션 코드 [${codeId}]가 생성되었습니다.`, false);
-        } else {
-            showNotification('모든 필드를 올바르게 입력해주세요.', true);
-        }
-    });
-
-    document.getElementById('dev-set-weather-btn')?.addEventListener('click', () => {
-        const weather = (document.getElementById('dev-weather-select') as HTMLSelectElement).value;
-        db.ref('globalState/weather').set(weather);
-        showNotification(`모든 유저의 날씨를 [${weather}] (으)로 설정했습니다.`, false);
-    });
-    document.getElementById('dev-clear-weather-btn')?.addEventListener('click', () => {
-        db.ref('globalState/weather').set(null);
-        showNotification('날씨 고정을 해제했습니다.', false);
-    });
-
-    document.getElementById('dev-set-prices-btn')?.addEventListener('click', () => {
-        const prices = {
-            Cube: parseInt((document.getElementById('dev-price-cube') as HTMLInputElement).value, 10),
-            Lunar: parseInt((document.getElementById('dev-price-lunar') as HTMLInputElement).value, 10),
-            Energy: parseInt((document.getElementById('dev-price-energy') as HTMLInputElement).value, 10),
-            Prism: parseInt((document.getElementById('dev-price-prism') as HTMLInputElement).value, 10),
-            Digital: parseInt((document.getElementById('dev-price-digital') as HTMLInputElement).value, 10),
-            Aurora: parseInt((document.getElementById('dev-price-aurora') as HTMLInputElement).value, 10),
-        };
-        const validPrices: any = {};
-        for (const [key, value] of Object.entries(prices)) {
-            if (!isNaN(value) && value > 0) {
-                validPrices[key] = value;
-            }
-        }
-        db.ref('globalState/prices').set(validPrices);
-        showNotification('코인 가격을 고정했습니다.', false);
-    });
-    document.getElementById('dev-clear-prices-btn')?.addEventListener('click', () => {
-        db.ref('globalState/prices').set(null);
-        showNotification('코인 가격 고정을 해제했습니다.', false);
-    });
-    
-    document.getElementById('dev-reset-user-btn')?.addEventListener('click', () => {
-        const uidToReset = (document.getElementById('dev-reset-uid') as HTMLInputElement).value.trim();
-        if (uidToReset && confirm(`정말로 UID: ${uidToReset} 유저의 데이터를 초기화하시겠습니까?`)) {
-            db.ref(`users/${uidToReset}`).set(getInitialGameState());
-            showNotification(`${uidToReset} 유저의 데이터가 초기화되었습니다.`, false);
-        } else if (!uidToReset) {
-            showNotification('UID를 입력해주세요.', true);
-        }
-    });
-}
-function populateSettingsUI() {
-    if (!document.getElementById('content-settings')) return;
-    const showToggle = document.getElementById('setting-show-notifications') as HTMLInputElement;
-    const durationInput = document.getElementById('setting-notification-duration') as HTMLInputElement;
-    if (showToggle) {
-        showToggle.checked = gameState.settings.showNotifications;
-    }
-    if (durationInput) {
-        durationInput.value = String(gameState.settings.notificationDuration / 1000); // ms to s
-    }
-}
-
-function handleAnnouncementUpdate(announcementData: { text: string, expiresAt: number } | null) {
-    const banner = dom.globalAnnouncement || (dom.globalAnnouncement = document.getElementById('global-announcement'));
-    const bannerText = dom.announcementText || (dom.announcementText = document.getElementById('announcement-text'));
-    const bannerTimer = dom.announcementTimer || (dom.announcementTimer = document.getElementById('announcement-timer'));
-    const closeBtn = dom.closeAnnouncement || (dom.closeAnnouncement = document.getElementById('close-announcement'));
-
-    if (announcementInterval) {
-        clearInterval(announcementInterval);
-        announcementInterval = null;
-    }
-
-    const hideBanner = () => {
-        if (banner) banner.classList.add('hidden');
-        if (announcementInterval) {
-            clearInterval(announcementInterval);
-            announcementInterval = null;
-        }
-    };
-    
-    if (closeBtn && !closeBtn.dataset.listener) {
-        closeBtn.addEventListener('click', hideBanner);
-        closeBtn.dataset.listener = 'true';
-    }
-
-    if (!banner || !announcementData || !announcementData.text || Date.now() >= announcementData.expiresAt) {
-        hideBanner();
-        return;
-    }
-
-    if (bannerText && bannerTimer) {
-        bannerText.textContent = announcementData.text;
-        banner.classList.remove('hidden');
-
-        const updateTimer = () => {
-            const timeLeft = Math.max(0, announcementData.expiresAt - Date.now());
-            if (timeLeft === 0) {
-                hideBanner();
-            } else {
-                const seconds = Math.floor(timeLeft / 1000);
-                bannerTimer.textContent = `${seconds}초 후 사라짐`;
-            }
-        };
-
-        updateTimer();
-        announcementInterval = setInterval(updateTimer, 1000);
-    }
-}
-
-export {};
+    if (registerForm) registerForm.addEventListener
