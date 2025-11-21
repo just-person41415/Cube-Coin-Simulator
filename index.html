@@ -16,7 +16,7 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
         
         /* 스크롤바 커스텀 */
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #93c5fd; border-radius: 20px; }
 
         /* 비활성화된 버튼 스타일 */
@@ -359,9 +359,12 @@
                 <div class="bg-gray-700 rounded-lg shadow-lg"><div class="flex justify-between items-center p-4 cursor-pointer" id="toggle-shop"><h3 class="text-lg font-semibold text-white">상점</h3><svg class="w-5 h-5 text-gray-400 rotate-180" id="toggle-shop-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div>
                     <div id="content-shop" class="px-4 pb-4">
                         <div id="shop-section">
-                            <div class="flex border-b border-gray-600 mb-4">
-                                <button id="shop-tab-function" class="flex-1 text-gray-400 p-2 border-b-2 border-transparent hover:text-white tab-active">기능</button>
-                                <button id="shop-tab-totems" class="flex-1 text-gray-400 p-2 border-b-2 border-transparent hover:text-white">토템</button>
+                            <div class="flex border-b border-gray-600 mb-4 overflow-x-auto custom-scrollbar">
+                                <button id="shop-tab-function" class="flex-1 min-w-[60px] text-gray-400 p-2 border-b-2 border-transparent hover:text-white tab-active whitespace-nowrap">기능</button>
+                                <button id="shop-tab-totems" class="flex-1 min-w-[60px] text-gray-400 p-2 border-b-2 border-transparent hover:text-white whitespace-nowrap">토템</button>
+                                <button id="shop-tab-traveling" class="flex-1 min-w-[60px] text-gray-400 p-2 border-b-2 border-transparent hover:text-white hidden whitespace-nowrap">떠돌이</button>
+                                <button id="shop-tab-digital" class="flex-1 min-w-[60px] text-gray-400 p-2 border-b-2 border-transparent hover:text-white hidden whitespace-nowrap">디지털</button>
+                                <button id="shop-tab-brewing" class="flex-1 min-w-[60px] text-gray-400 p-2 border-b-2 border-transparent hover:text-white hidden whitespace-nowrap">양조</button>
                             </div>
                             <div id="shop-content-function">
                                 <h4 class="text-md font-semibold text-gray-300 mb-2">기능 아이템</h4>
@@ -370,6 +373,17 @@
                             <div id="shop-content-totems" class="hidden">
                                  <h4 class="text-md font-semibold text-gray-300 mb-2">날씨 토템 <span id="totem-timer-display" class="text-sm font-normal text-gray-400">(갱신 대기중...)</span></h4>
                                 <div id="totem-items" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
+                            </div>
+                            <div id="shop-content-traveling" class="hidden">
+                                <h4 class="text-md font-semibold text-purple-300 mb-2">떠돌이 상인 (01:00~04:00)</h4>
+                                <div id="traveling-items" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
+                            </div>
+                            <div id="shop-content-digital" class="hidden">
+                                <h4 class="text-md font-semibold text-cyan-300 mb-2">디지털 상점 (8분 갱신)</h4>
+                                <div id="digital-items" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
+                            </div>
+                            <div id="shop-content-brewing" class="hidden">
+                                <div id="brewing-section"></div>
                             </div>
                         </div>
                     </div>
