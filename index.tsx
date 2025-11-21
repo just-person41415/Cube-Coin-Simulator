@@ -333,6 +333,105 @@ function animate() {
     if (renderer && scene && camera) { renderer.render(scene, camera); }
 }
 
+function initAuth() {
+    // Toggle Views
+    document.getElementById('show-register-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('login-view')?.classList.add('hidden');
+        document.getElementById('register-view')?.classList.remove('hidden');
+    });
+
+    document.getElementById('show-login-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('register-view')?.classList.add('hidden');
+        document.getElementById('login-view')?.classList.remove('hidden');
+    });
+
+    // Login
+    document.getElementById('login-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = (document.getElementById('login-email-input') as HTMLInputElement).value;
+        const password = (document.getElementById('login-password-input') as HTMLInputElement).value;
+        
+        auth.signInWithEmailAndPassword(email, password).catch((error: any) => {
+            alert("로그인 오류: " + error.message);
+        });
+    });
+
+    // Register
+    document.getElementById('register-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = (document.getElementById('register-email-input') as HTMLInputElement).value;
+        const password = (document.getElementById('register-password-input') as HTMLInputElement).value;
+        
+        auth.createUserWithEmailAndPassword(email, password).then((cred: any) => {
+            // Initial data setup for new user
+            if (cred.user) {
+                const initialData = getInitialGameState();
+                initialData.lastOnlineTimestamp = Date.now();
+                db.ref('users/' + cred.user.uid).set(initialData);
+            }
+        }).catch((error: any) => {
+            alert("회원가입 오류: " + error.message);
+        });
+    });
+
+    // Logout
+    document.getElementById('logout-button')?.addEventListener('click', () => {
+        auth.signOut().then(() => {
+            location.reload();
+        });
+    });
+
+    // Auth State Listener
+    auth.onAuthStateChanged(async (user: any) => {
+        if (user) {
+            userUID = user.uid;
+            userNickname = user.email.split('@')[0];
+            
+            // Hide Auth, Show Main
+            document.getElementById('auth-container')?.classList.add('hidden');
+            document.getElementById('main-content')?.classList.remove('hidden');
+            document.getElementById('global-announcement')?.classList.remove('hidden');
+            
+            // Load User Data
+            try {
+                const snapshot = await db.ref('users/' + user.uid).once('value');
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    // Merge data safely
+                    gameState = { ...gameState, ...data };
+                    
+                    // Restore Dates
+                    gameTime = new Date(gameState.gameTime);
+                    
+                    // Force UI update
+                    updateUI();
+                    renderShop();
+                    updateCubeAppearance();
+                    
+                    // Add system message
+                    const chatBox = document.getElementById('chat-messages');
+                    if (chatBox) {
+                        const div = document.createElement('div');
+                        div.className = "text-center text-xs text-gray-500 my-2";
+                        div.innerText = `--- ${userNickname}님 환영합니다 ---`;
+                        chatBox.appendChild(div);
+                    }
+                }
+            } catch (e) {
+                console.error("Data load error", e);
+            }
+        } else {
+            // No user
+            userUID = null;
+            userNickname = null;
+            document.getElementById('auth-container')?.classList.remove('hidden');
+            document.getElementById('main-content')?.classList.add('hidden');
+        }
+    });
+}
+
 function initGame() {
     gameTime = new Date(gameState.gameTime);
     dom = {
@@ -358,6 +457,7 @@ function initGame() {
         seasonDisplay: document.getElementById('season-display')
     };
     
+    initAuth(); // NEW: Initialize Authentication
     updateUI();
     init3D();
     animate();
